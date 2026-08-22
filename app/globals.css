@@ -16,6 +16,7 @@
 .hudReadout b{font:700 12px var(--font-geist-mono);color:var(--text)}
 .hudReadout b.ok{color:var(--cyan);text-shadow:0 0 6px #4fd8e070}
 .hudReadout b.warn{color:var(--amber)}
+.hudReadout b.partial{color:#c9a8ff}
 .hudReadout b.dim{color:var(--dim)}
 .hudReadout.live{box-shadow:0 0 18px #4fd8e030}
 .jointChip{position:absolute;z-index:3;transform:translate(14px,-50%);display:flex;flex-direction:column;background:#101316d9;border:1px solid #4fd8e060;border-radius:4px;padding:2px 6px;pointer-events:none;box-shadow:0 0 10px #4fd8e025}
@@ -27,3 +28,18 @@
 .angleGrid b{font:700 15px var(--font-geist-mono);color:var(--cyan)}
 @media(prefers-reduced-motion:no-preference){.camera::before{content:"";position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,#4fd8e000,#4fd8e0a0,#4fd8e000);z-index:2;pointer-events:none;animation:scan 3.2s linear infinite}}
 @keyframes scan{0%{top:0}100%{top:100%}}
+
+/* --- terminal log: real lifecycle events (model load, camera, tracking
+   lock, uplink), not decorative/fake activity --- */
+.terminal{background:#05070a;border:1px solid var(--line);border-radius:6px;padding:8px 10px;max-height:130px;overflow-y:auto;margin-top:10px;font:10.5px/1.65 var(--font-geist-mono)}
+.terminal .tline{white-space:pre-wrap;word-break:break-word}
+.t-ts{color:var(--dim)}
+.t-sys{color:#5fe0a0}
+.t-net{color:var(--cyan)}
+.t-cam{color:var(--amber)}
+.t-track{color:#c9a8ff}
+.t-uplink{color:#5fe0a0}
+.t-err{color:var(--red)}
+.term-cursor{display:inline-block;width:6px;height:11px;background:var(--cyan);vertical-align:middle;margin-left:1px}
+@media(prefers-reduced-motion:no-preference){.term-cursor{animation:term-blink 1s step-end infinite}}
+@keyframes term-blink{50%{opacity:0}}

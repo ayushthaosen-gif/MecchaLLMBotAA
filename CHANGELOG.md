@@ -5,6 +5,35 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Fixed (pose mirror wireframe never rendering)
+- Root cause of "wireframe/joints not visible" in the camera mirror
+  (both `docs/index.html` and `app/mirror/page.tsx`): drawing was gated
+  behind a single strict check requiring all 8 of
+  shoulders/elbows/wrists/**hips** to be confidently visible. Typical
+  webcam framing (sitting at a desk) usually crops the hips out of frame
+  entirely, so that gate silently stayed false forever and nothing ever
+  drew — not a rendering bug, a never-true condition. Split into two
+  gates: draw the wireframe/joint markers whenever any pose is detected
+  at all; only require the stricter arm-only check (shoulders, elbows,
+  wrists — no hips) before computing and streaming angles to the robot.
+  Added a "LOCKING" (pose seen, still no confident arm read) state
+  between SEARCHING and TRACKING so the HUD reflects this honestly.
+- Also removed the hip *requirement* from the angle math itself, not
+  just the draw gate: `side()`/`torsoReference()` now derive a virtual
+  torso reference from the head+shoulder landmarks (extending the
+  nose-to-shoulder-midpoint vector) and only fall back to it when the
+  real hip landmark's confidence is low — so accuracy improves when hips
+  are visible, but nothing breaks when they aren't.
+
+### Added (terminal log)
+- Both mirror pages now show a real-time terminal-style log
+  (`[HH:MM:SS] KIND :: message`, color-coded by kind: SYS/NET/CAM/TRACK/
+  UPLINK/ERR) of actual lifecycle events — WASM fetch, model load,
+  camera request, tracking lock acquired/lost, uplink connect/first-ack,
+  errors. Deliberately not decorative/fake activity — every line
+  corresponds to a real state transition, in keeping with this project's
+  otherwise-honest telemetry throughout.
+
 ### Fixed
 - `docs/index.html` (the GitHub Pages dashboard) had drifted out of sync
   with `app/` (the Next.js one): it was missing Codex's 6 newer meme

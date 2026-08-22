@@ -237,7 +237,27 @@
   .angle-grid b{ font-family:'JetBrains Mono',monospace; font-size:14px; color:var(--cyan); }
   .ok{ color:var(--cyan) !important; text-shadow:0 0 6px #4fd8e070; }
   .warn{ color:var(--amber) !important; }
+  .partial{ color:#c9a8ff !important; }
   .dim-txt{ color:var(--dim) !important; }
+
+  /* ---------- terminal log ---------- */
+  .terminal{
+    background:#05070a; border:1px solid var(--line); border-radius:6px;
+    padding:8px 10px; height:130px; overflow-y:auto; margin-top:10px;
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; line-height:1.65;
+    scrollbar-color:var(--line) transparent;
+  }
+  .terminal .tline{ white-space:pre-wrap; word-break:break-word; }
+  .t-ts{ color:var(--dim); }
+  .t-sys{ color:#5fe0a0; }
+  .t-net{ color:var(--cyan); }
+  .t-cam{ color:var(--amber); }
+  .t-track{ color:#c9a8ff; }
+  .t-uplink{ color:#5fe0a0; }
+  .t-err{ color:var(--red); }
+  .term-cursor{ display:inline-block; width:6px; height:11px; background:var(--cyan); vertical-align:middle; margin-left:1px; }
+  @media (prefers-reduced-motion: no-preference){ .term-cursor{ animation:term-blink 1s step-end infinite; } }
+  @keyframes term-blink{ 50%{ opacity:0; } }
   @media (prefers-reduced-motion: no-preference){
     .camera-wrap::before{
       content:''; position:absolute; left:0; right:0; height:2px; z-index:2; pointer-events:none;
@@ -348,6 +368,10 @@
     <div class="cfg-row" style="margin-top:12px;">
       <label>Mirror endpoint (optional — leave blank for wireframe-only)</label>
       <input id="mirrorEndpoint" type="text" placeholder="https://your-robot.example.com/mirror_pose" />
+    </div>
+    <div class="cfg-row">
+      <label>System log</label>
+      <div class="terminal" id="terminalLog"><div class="tline"><span class="t-ts">[--:--:--]</span> <span class="t-sys">SYS</span> :: idle<span class="term-cursor"></span></div></div>
     </div>
     <div class="cfg-note">
       On the Pi set <code>ENABLE_MIRROR_CONTROL=1</code>, <code>DASHBOARD_TOKEN</code>, and <code>MIRROR_ALLOWED_ORIGIN</code>. Uses the same Bearer token as Link Configuration below. A public HTTPS page cannot call an insecure HTTP robot endpoint — use HTTPS or run this page locally.
@@ -567,8 +591,26 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     const d = Math.hypot(u.x,u.y) * Math.hypot(v.x,v.y);
     return d ? Math.acos(clamp((u.x*v.x+u.y*v.y)/d, -1, 1)) * 180/Math.PI : 90;
   }
-  function side(l, shoulder, elbow, wrist, hip){
-    const elevation = angle(l[hip], l[shoulder], l[elbow]);
+  // Shoulder elevation is measured relative to a torso reference point.
+  // The real hip landmark makes the best reference when it's actually
+  // visible — but a typical webcam framing (sitting at a desk) usually
+  // crops the hips out entirely, and MediaPipe still reports a low-
+  // confidence "guess" position for them. Rather than requiring hips at
+  // all, derive a virtual torso reference from the head/shoulders —
+  // landmarks that are essentially always in frame together — by
+  // extending the nose-to-shoulder-midpoint vector further down. This is
+  // a rough proxy for "where the hips are" based on typical body
+  // proportions, not a measurement, but it keeps tracking working for
+  // any normal upper-body framing instead of only full-body shots.
+  function torsoReference(l){
+    const nose = l[0];
+    const mid = { x: (l[11].x + l[12].x) / 2, y: (l[11].y + l[12].y) / 2 };
+    const dx = mid.x - nose.x, dy = mid.y - nose.y;
+    return { x: mid.x + dx * 2, y: mid.y + dy * 2 };
+  }
+  function side(l, shoulder, elbow, wrist, hip, virtualHip){
+    const hipPoint = (l[hip].visibility ?? 1) > .3 ? l[hip] : virtualHip;
+    const elevation = angle(hipPoint, l[shoulder], l[elbow]);
     return { shoulder: clamp(30 + elevation*2/3), elbow: clamp(angle(l[shoulder], l[elbow], l[wrist])) };
   }
 
@@ -598,30 +640,68 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     localStorage.setItem('meccanoid.mirrorEndpoint', endpointInput.value.trim());
   });
 
+  // --- Terminal log — real lifecycle events (model load, camera, tracking
+  // lock, uplink), not decorative/fake activity. Capped so it can't grow
+  // unbounded during a long session. ---
+  const termEl = document.getElementById('terminalLog');
+  const TERM_MAX = 60;
+  function termLog(kind, msg){
+    const ts = new Date().toLocaleTimeString([], { hour12: false });
+    termEl.querySelector('.term-cursor')?.parentElement?.remove();
+    const row = document.createElement('div');
+    row.className = 'tline';
+    row.innerHTML = `<span class="t-ts">[${ts}]</span> <span class="t-${kind}">${kind.toUpperCase()}</span> :: `;
+    row.appendChild(document.createTextNode(msg));
+    termEl.appendChild(row);
+    while(termEl.children.length > TERM_MAX) termEl.removeChild(termEl.firstChild);
+    const cursorRow = document.createElement('div');
+    cursorRow.className = 'tline';
+    cursorRow.innerHTML = '<span class="term-cursor"></span>';
+    termEl.appendChild(cursorRow);
+    termEl.scrollTop = termEl.scrollHeight;
+  }
+
   let running = false, raf = 0, tracker = null, stream = null;
   let lastSent = 0, sending = false, smoothed = null;
   let fps = 0, lastFrame = performance.now();
+  let lockState = 'searching'; // 'searching' | 'locking' | 'tracking'
+  let uplinkActive = false;
 
   async function start(){
     try{
       toggleBtn.disabled = true;
       camStatusText.textContent = 'Loading on-device pose model…';
+      termLog('sys', 'initializing pose engine');
+      termLog('net', 'fetching WASM runtime...');
       const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm');
-      tracker ??= await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate: 'GPU' },
-        runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: .6, minTrackingConfidence: .6,
-      });
+      termLog('net', 'WASM runtime ready');
+      if(!tracker){
+        termLog('net', 'loading pose_landmarker_lite model...');
+        tracker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate: 'GPU' },
+          runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: .6, minTrackingConfidence: .6,
+        });
+        termLog('net', 'landmark model ready');
+      }
+      camStatusText.textContent = 'Requesting camera access…';
+      termLog('cam', 'requesting camera access...');
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 } }, audio: false });
+      const settings = stream.getVideoTracks()[0]?.getSettings() || {};
+      termLog('cam', `stream acquired ${settings.width || '?'}x${settings.height || '?'}`);
       video.srcObject = stream;
       await video.play();
       running = true;
       toggleBtn.textContent = 'STOP MIRROR';
       camStatusText.textContent = 'Tracking locally';
       lastFrame = performance.now();
+      lockState = 'searching'; uplinkActive = false;
+      termLog('sys', 'tracking loop started');
       loop();
     }catch(e){
+      const msg = e instanceof Error ? e.message : 'Unable to start camera';
+      termLog('err', msg);
       stop(false);
-      camStatusText.textContent = e instanceof Error ? e.message : 'Unable to start camera';
+      camStatusText.textContent = msg;
     }finally{
       toggleBtn.disabled = false;
     }
@@ -635,7 +715,10 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
     hudUplink.textContent = 'OFF'; hudUplink.className = 'dim-txt';
     for(const k in chips) chips[k].el.style.display = 'none';
-    if(report) camStatusText.textContent = 'Camera stopped — robot auto-rests within 750 ms.';
+    if(report){
+      camStatusText.textContent = 'Camera stopped — robot auto-rests within 750 ms.';
+      termLog('sys', 'camera stopped — robot auto-rests within 750ms');
+    }
   }
 
   function drawJointMarker(ctx, x, y){
@@ -665,18 +748,30 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     const result = tracker.detectForVideo(video, now);
     const latencyMs = performance.now() - t0;
 
-    const trackedOk = result.landmarks[0] && [11,12,13,14,15,16,23,24].every(i => (result.landmarks[0][i].visibility ?? 1) > .45);
+    // Two separate gates, not one: whether to DRAW (loose — any pose at
+    // all) vs whether it's confident enough to COMPUTE + STREAM angles to
+    // a real robot (stricter — arm joints specifically). The previous
+    // single gate required all 8 of shoulders/elbows/wrists/HIPS to be
+    // visible before drawing anything at all — but a typical webcam
+    // framing (sitting at a desk) usually doesn't include hips in frame,
+    // so that gate silently stayed false and nothing ever rendered, even
+    // though MediaPipe was tracking the arms fine. Hips are only used to
+    // compute shoulder elevation, not to decide whether to show a
+    // wireframe at all.
+    const poseDetected = !!result.landmarks[0];
+    const armsConfident = poseDetected && [11,12,13,14,15,16].every(i => (result.landmarks[0][i].visibility ?? 1) > .45);
 
     hudFps.textContent = Math.round(fps) || '—';
-    hudLatency.textContent = trackedOk ? `${Math.round(latencyMs)}ms` : '—';
+    hudLatency.textContent = poseDetected ? `${Math.round(latencyMs)}ms` : '—';
 
     let streaming = false;
-    if(trackedOk){
+    if(poseDetected){
       const l = result.landmarks[0];
-      new DrawingUtils(ctx).drawConnectors(l, PoseLandmarker.POSE_CONNECTIONS, { color: '#4fd8e055', lineWidth: 2 });
+      new DrawingUtils(ctx).drawConnectors(l, PoseLandmarker.POSE_CONNECTIONS, { color: armsConfident ? '#4fd8e0aa' : '#4fd8e055', lineWidth: 2 });
 
       // Front-camera mirror: the person's left arm drives the robot's right arm.
-      const right = side(l, 11, 13, 15, 23), left = side(l, 12, 14, 16, 24);
+      const vHip = torsoReference(l);
+      const right = side(l, 11, 13, 15, 23, vHip), left = side(l, 12, 14, 16, 24, vHip);
       const raw = { right_shoulder: right.shoulder, right_elbow: right.elbow, left_shoulder: left.shoulder, left_elbow: left.elbow };
       const prev = smoothed || raw;
       smoothed = Object.fromEntries(Object.entries(raw).map(([k,x]) => [k, Math.round(prev[k]*.7 + x*.3)]));
@@ -697,28 +792,43 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
         chip.grid.textContent = `${smoothed[key]}°`;
       }
 
-      hudLock.textContent = 'TRACKING'; hudLock.className = 'ok';
+      if(armsConfident){
+        hudLock.textContent = 'TRACKING'; hudLock.className = 'ok';
+        camStatusText.textContent = 'Tracking locally';
+        if(lockState !== 'tracking'){ termLog('track', 'arm tracking lock confirmed'); lockState = 'tracking'; }
+      }else{
+        hudLock.textContent = 'LOCKING'; hudLock.className = 'partial';
+        camStatusText.textContent = 'Pose seen — move shoulders/elbows/wrists fully into frame';
+        if(lockState === 'searching'){ termLog('track', 'pose acquired, locking arm joints...'); lockState = 'locking'; }
+      }
 
       const endpoint = endpointInput.value.trim();
-      if(endpoint && now - lastSent > 100 && !sending){
+      if(armsConfident && endpoint && now - lastSent > 100 && !sending){
         lastSent = now; sending = true; streaming = true;
         const token = localStorage.getItem('meccanoid.token') || '';
+        if(!uplinkActive){ termLog('uplink', `connecting to ${endpoint}`); }
         fetch(endpoint, {
           method: 'POST',
           headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
           body: JSON.stringify({ joints: smoothed }),
-        }).then(r => { if(!r.ok) throw new Error(`Mirror endpoint HTTP ${r.status}`); })
-          .catch(e => { camStatusText.textContent = e.message; })
-          .finally(() => { sending = false; });
+        }).then(r => {
+          if(!r.ok) throw new Error(`Mirror endpoint HTTP ${r.status}`);
+          if(!uplinkActive){ termLog('uplink', `first frame acknowledged`); uplinkActive = true; }
+        }).catch(e => {
+          camStatusText.textContent = e.message;
+          termLog('err', e.message);
+          uplinkActive = false;
+        }).finally(() => { sending = false; });
       }
-      hudUplink.textContent = endpoint ? (streaming ? 'LIVE' : 'IDLE') : 'OFF';
+      hudUplink.textContent = endpoint ? (streaming ? 'LIVE' : (armsConfident ? 'IDLE' : 'WAIT')) : 'OFF';
       hudUplink.className = streaming ? 'ok' : 'dim-txt';
     }else{
-      camStatusText.textContent = 'Move back until shoulders, elbows and wrists are visible';
+      camStatusText.textContent = 'No pose detected — step into frame';
       hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
       hudUplink.textContent = endpointInput.value.trim() ? 'IDLE' : 'OFF';
       hudUplink.className = 'dim-txt';
       for(const k in chips) chips[k].el.style.display = 'none';
+      if(lockState !== 'searching'){ termLog('track', 'pose lost — searching'); lockState = 'searching'; uplinkActive = false; }
     }
 
     raf = requestAnimationFrame(loop);
