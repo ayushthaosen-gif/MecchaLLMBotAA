@@ -26,9 +26,9 @@ from pathlib import Path
 from flask import Flask, request, jsonify
 import requests
 
-from servo_controller import ServoBus, ServoBusConfig
-from motion_engine import MotionEngine
-from gestures import match_gesture_from_text
+from rig import MeccanoidRig
+from rig_motion_engine import RigMotionEngine
+from rig_gestures import GESTURES, match_gesture_from_text
 from llm_backend import build_llm_backend
 
 # ---------------------------------------------------------------------------
@@ -40,12 +40,13 @@ LLM_BACKEND = os.environ.get("LLM_BACKEND", "ollama")
 DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN")  # if set, /chat requires it
 MEMORY_FILE = Path(os.environ.get("MEMORY_FILE", "robot_memory.txt"))
 SIMULATE_SERVOS = os.environ.get("SIMULATE_SERVOS", "1") != "0"
+SERVO_TRANSPORT = os.environ.get("SERVO_TRANSPORT", "direct")
 WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")  # e.g. "40.71,-74.01"
 
 llm = build_llm_backend(LLM_BACKEND)
 
-bus = ServoBus(ServoBusConfig(simulate=SIMULATE_SERVOS, servo_count=4))
-motion = MotionEngine(bus)
+rig = MeccanoidRig(simulate=SIMULATE_SERVOS, transport=SERVO_TRANSPORT)
+motion = RigMotionEngine(rig)
 motion.start()
 
 app = Flask(__name__)
@@ -136,7 +137,7 @@ def chat():
     # while we wait on the Claude API call below.
     gesture = match_gesture_from_text(message)
     if gesture:
-        motion.play(gesture)
+        motion.play(GESTURES[gesture])
 
     tool_context = maybe_fetch_tool_context(message)
     memory_context = load_recent_memory()
@@ -168,8 +169,9 @@ def chat():
 def status():
     return jsonify({
         "busy": motion.is_busy,
-        "servo_count": bus.config.servo_count,
-        "simulated": bus.config.simulate,
+        "servo_count": 4,
+        "simulated": SIMULATE_SERVOS,
+        "transport": SERVO_TRANSPORT,
     })
 
 
