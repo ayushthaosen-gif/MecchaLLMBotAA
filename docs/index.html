@@ -378,7 +378,7 @@
       <div><span class="k">L-ELBOW</span><b id="gridLE">—</b></div>
     </div>
     <div class="cfg-note" style="margin-top:8px;">
-      Cross your wrists in front of your chest to toggle <b>follow mode</b> — the robot records your current apparent distance (shoulder width in frame) and drives forward/backward to hold it as you move closer or farther. Cross again to release.
+      Cross your wrists in front of your chest to toggle <b>follow mode</b> — the robot locks your current apparent distance (shoulder width in frame) and drives forward to close the gap if you step back, stopping once it's caught up. No backward/retreat behavior yet if you step closer. Cross again to release.
     </div>
     <button class="cfg-save" id="mirrorToggle" style="margin-top:10px;">START CAMERA</button>
     <div class="cfg-row" style="margin-top:12px;">
@@ -983,12 +983,15 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
       if(followMode && followBaselineWidth){
         const currentWidth = Math.abs(l[12].x - l[11].x) * canvas.width;
         const ratio = currentWidth / followBaselineWidth;
-        // Smaller in frame than baseline => person moved farther away =>
-        // drive forward to close the gap. Larger => moved closer => back
-        // away. Dead-band avoids jittering on ordinary sway/breathing.
-        const wanted = ratio < 1 - FOLLOW_DEAD_BAND ? 'forward'
-                     : ratio > 1 + FOLLOW_DEAD_BAND ? 'backward'
-                     : 'stop';
+        // Crossing your wrists LOCKS the distance at that moment as the
+        // target. From then on: smaller in frame than the locked width
+        // means you've stepped back, so the robot drives forward to close
+        // the gap until it's back at the locked distance, then stops.
+        // Deliberately one-directional for now — no backward/retreat
+        // behavior if you step closer than the locked distance, only
+        // "catch up if you back away." Dead-band avoids jitter from
+        // ordinary sway/breathing right at the locked distance.
+        const wanted = ratio < 1 - FOLLOW_DEAD_BAND ? 'forward' : 'stop';
         locomotionAction = wanted;
         if(wanted !== lastLoggedLocomotion){
           termLog('track', `follow: ${wanted} (width ${currentWidth.toFixed(0)}px vs baseline ${followBaselineWidth.toFixed(0)}px)`);

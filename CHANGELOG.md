@@ -5,6 +5,24 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Fixed (follow mode was bidirectional, should be forward-only for now)
+- Follow mode's distance decision drove the wheels both directions
+  (forward when farther, backward when closer) around the baseline
+  width. Corrected to the intended behavior: crossing your wrists LOCKS
+  the distance at that instant; only stepping back (narrower shoulder
+  width) triggers a forward pulse to close the gap, stopping once back
+  at the locked distance. Stepping closer than the locked distance now
+  correctly does nothing — no backward/retreat behavior, on purpose, for
+  now. Applied to both `docs/index.html` and `app/mirror/page.tsx`.
+- Documented the actual distance-tracking mechanism in the README (a
+  shoulder-width-in-pixels proxy, not a real measurement) since it's a
+  reasonable question and deserves a written answer, not just a chat
+  reply — including its real limitations (no absolute calibration,
+  assumes facing the camera).
+- Fixed a stale, now-incorrect README claim left over from before this
+  feature existed ("intentionally does not control the wheels or follow
+  a person").
+
 ### Added (face expression tracking, follow mode, action log)
 - **Face expression tracking**: a second on-device MediaPipe model
   (`FaceLandmarker` + blendshapes) classifies expression into 7 hues —

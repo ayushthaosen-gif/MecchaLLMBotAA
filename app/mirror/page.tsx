@@ -258,7 +258,13 @@ export default function MirrorPage(){
    if(followRef.current&&followBaselineRef.current){
     const currentWidth=Math.abs(l[12].x-l[11].x)*c.width;
     const ratio=currentWidth/followBaselineRef.current;
-    const wanted=ratio<1-FOLLOW_DEAD_BAND?"forward":ratio>1+FOLLOW_DEAD_BAND?"backward":"stop";
+    // Crossing your wrists LOCKS the distance at that moment as the
+    // target. From then on: smaller in frame than the locked width means
+    // you've stepped back, so the robot drives forward to close the gap
+    // until it's back at the locked distance, then stops. Deliberately
+    // one-directional for now — no backward/retreat if you step closer
+    // than the locked distance, only "catch up if you back away."
+    const wanted=ratio<1-FOLLOW_DEAD_BAND?"forward":"stop";
     locomotionAction=wanted;
     if(wanted!==lastLoggedLocoRef.current){
      pushLog("track",`follow: ${wanted} (width ${currentWidth.toFixed(0)}px vs baseline ${followBaselineRef.current.toFixed(0)}px)`);
@@ -331,7 +337,7 @@ export default function MirrorPage(){
   <div className="angleGrid">
    {chips.map(([label,key])=><div key={key}><small>{label}</small><b>{joints?`${joints[key]}°`:"—"}</b></div>)}
   </div>
-  <p className="note" style={{marginTop:8}}>Cross your wrists in front of your chest to toggle <b>follow mode</b> — the robot records your current apparent distance (shoulder width in frame) and drives forward/backward to hold it. Cross again to release.</p>
+  <p className="note" style={{marginTop:8}}>Cross your wrists in front of your chest to toggle <b>follow mode</b> — the robot locks your current apparent distance (shoulder width in frame) and drives forward to close the gap if you step back, stopping once it's caught up. No backward/retreat behavior yet if you step closer. Cross again to release.</p>
   <div className="mirrorButtons"><button onClick={()=>running?stop():start()}>{running?"STOP MIRROR":"START CAMERA"}</button></div>
   <div className="terminal">
    {log.map((l,i)=><div key={i} className="tline"><span className="t-ts">[{l.ts}]</span> <span className={`t-${l.kind}`}>{l.kind.toUpperCase()}</span> :: {l.msg}</div>)}

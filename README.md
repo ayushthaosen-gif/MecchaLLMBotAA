@@ -324,10 +324,12 @@ ever leaves the browser), to:
   sent as `mood` and applied to the robot's eye LEDs via `eyes.py`'s
   `MOOD_COLORS`.
 - **Detect crossed wrists** as a "follow mode" toggle: crossing your wrists
-  records your current apparent distance (shoulder width in frame) as a
-  baseline, then the robot drives forward/backward in short bounded pulses
-  to hold that distance as you move closer or farther. Cross again to
-  release.
+  *locks* your current apparent distance (shoulder width in frame — see
+  "How distance is tracked" below) as the target. From then on, if you
+  step back the robot drives forward in short bounded pulses to close the
+  gap, stopping once it's caught back up to the locked distance —
+  deliberately one-directional for now, no backward/retreat if you step
+  closer than the locked distance. Cross again to release.
 - Cap the actual camera-loop framerate (detection + redraw) at 2x the
   robot's own accepted update rate (40Hz vs. the backend's 20Hz limit) —
   going faster wastes battery/CPU on frames neither the eye nor the robot
@@ -349,17 +351,42 @@ matched to how safety-critical it actually is:
   to rest if updates stop for 750ms.
 - **Mood** (`mood`, optional): 0.3s min interval — cosmetic, so a skipped
   update is never an error, just a no-op.
-- **Locomotion** (`locomotion`, optional — `forward`/`backward`/`stop`):
+- **Locomotion** (`locomotion`, optional — `forward`/`backward`/`stop`, only
+  `forward`/`stop` are actually sent right now — see follow mode above):
   0.5s min interval, each command a short self-bounding wheel pulse (never
   a continuous motor command) at a gentler speed than scripted routines
   use, since this is live teleop, not a scripted gesture.
 
 Test with simulated servos/motors before enabling real hardware.
 
+### How distance is tracked (follow mode)
+
+There's no depth sensor or real-world distance measurement involved — it's
+a monocular-camera proxy based on simple perspective: **shoulder width in
+pixels**, `|right_shoulder.x - left_shoulder.x| × canvas width`. Closer to
+the camera = shoulders span more pixels; farther away = fewer pixels. That
+single number, captured at the instant you cross your wrists, becomes
+`followBaselineWidth`.
+
+On every subsequent processed frame, the same measurement is taken again
+and compared as a ratio (`currentWidth / followBaselineWidth`). Ratio
+below `1 - 8%` means you've stepped back (shoulders look narrower than
+when locked) → drive forward; within that ±8% dead-band → stop, you're
+back at the locked distance. The 8% band exists so ordinary sway/breathing
+doesn't cause the wheels to twitch right at the target.
+
+Known limitations, stated plainly: this is a *relative* proxy, not a
+measurement in meters — it has no absolute calibration and would need one
+(e.g. a known focal length + real shoulder width) to report actual
+distance. It also assumes you stay roughly facing the camera; turning
+sideways foreshortens the shoulder span and would read as "farther away"
+even at the same real distance. Same category of honest caveat as
+`locomotion.py`'s dead-reckoning pose tracking elsewhere in this project —
+useful for the behavior it drives, not for precision.
+
 This mirrors shoulders and elbows, not fingers: the robot has no finger
-motors. It intentionally does not control the wheels or follow a person. Live
-pose streaming is currently Pi-only because the cloud ESP32 polling loop and
-single-chain firmware are not suitable for safe real-time control. Eye cues
-are synchronized in the cloud logic, but physical eye output still requires
-the separate eye-module transport and the documented two-arm-chain firmware
-work.
+motors. Live pose streaming is currently Pi-only because the cloud ESP32
+polling loop and single-chain firmware are not suitable for safe real-time
+control. Eye cues are synchronized in the cloud logic, but physical eye
+output still requires the separate eye-module transport and the documented
+two-arm-chain firmware work.
