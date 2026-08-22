@@ -196,7 +196,7 @@
 
   <header>
     <div class="brand"><b>MECCANOID</b> // CONSOLE</div>
-    <div class="unit-id" id="unitId">UNIT-01 · G15KS</div>
+    <div class="unit-id" id="unitId">UNIT-01 · PERSONAL 2.0</div>
   </header>
 
   <div class="core-stage">
@@ -225,17 +225,20 @@
     </div>
     <div class="tele-cell">
       <div class="k">Servos</div>
-      <div class="v ok" id="telServos">12/12</div>
+      <div class="v ok" id="telServos">4/4</div>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-title">Motor Actions</div>
     <div class="actions">
-      <button class="act-btn" data-action="wave"><span class="dot"></span>Wave</button>
-      <button class="act-btn" data-action="dance"><span class="dot"></span>Dance</button>
-      <button class="act-btn" data-action="look"><span class="dot"></span>Look around</button>
-      <button class="act-btn" data-action="sit"><span class="dot"></span>Sit / rest</button>
+      <button class="act-btn" data-action="wave_right" data-phrase="wave hello"><span class="dot"></span>Wave</button>
+      <button class="act-btn" data-action="wave_both" data-phrase="wave with both arms"><span class="dot"></span>Wave both</button>
+      <button class="act-btn" data-action="bow" data-phrase="take a bow"><span class="dot"></span>Bow</button>
+      <button class="act-btn" data-action="shrug" data-phrase="shrug"><span class="dot"></span>Shrug</button>
+      <button class="act-btn" data-action="point" data-phrase="point over there"><span class="dot"></span>Point</button>
+      <button class="act-btn" data-action="full_dance" data-phrase="let's dance"><span class="dot"></span>Dance</button>
+      <button class="act-btn" data-action="sit" data-phrase="sit down and rest"><span class="dot"></span>Sit / rest</button>
     </div>
   </div>
 
@@ -265,7 +268,7 @@
     </div>
     <button class="cfg-save" id="cfgSave">Save link settings</button>
     <div class="cfg-note">
-      Kept in memory for this session only. Point this at the endpoint your Raspberry Pi (or a Firebase/Supabase function in front of it) exposes — this page never talks to the Claude API directly. Until an endpoint is set, the console runs in demo mode with simulated responses.
+      Kept in <code>localStorage</code> on this device only — never sent anywhere except your own endpoint. Point this at your cloud function's <code>/chat</code> route (e.g. <code>https://REGION-PROJECT.cloudfunctions.net/chat</code>) or your Pi's <code>http://pi-ip:5000/chat</code>. This page never talks to Gemini/Claude directly — that always happens server-side, which is the whole point of the split. Until an endpoint is set, the console runs in demo mode with simulated responses.
     </div>
   </div>
 
@@ -274,10 +277,11 @@
 <script>
 (function(){
   const state = {
-    endpoint: '',
-    token: '',
+    endpoint: localStorage.getItem('meccanoid.endpoint') || '',
+    token: localStorage.getItem('meccanoid.token') || '',
     demo: true,
   };
+  state.demo = state.endpoint.length === 0;
 
   const body = document.body;
   const feed = document.getElementById('feed');
@@ -325,8 +329,14 @@
 
   // seed
   addFeedLine('bot', "Chest core warm. I'm awake and listening.");
-  addMemory('Session started — demo mode, no backend linked yet.');
+  addMemory(state.demo
+    ? 'Session started — demo mode, no backend linked yet.'
+    : `Session started — linked to ${state.endpoint}`);
   setMode('idle');
+  if(!state.demo){
+    document.getElementById('cfgEndpoint').value = state.endpoint;
+    document.getElementById('cfgToken').value = state.token;
+  }
 
   document.getElementById('wakeBtn').addEventListener('click', () => {
     setMode('active');
@@ -334,14 +344,15 @@
     setTimeout(() => { if(!body.classList.contains('state-alert')) setMode('active'); }, 10);
   });
 
+  // Buttons send the same trigger phrase the real gesture matcher listens
+  // for (see KEYWORD_TRIGGERS in gestures.py / cloud_function/main.py), so
+  // pressing "Bow" actually round-trips through the real backend and fires
+  // the real gesture — not a cosmetic animation.
   document.querySelectorAll('.act-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const action = btn.dataset.action;
       btn.classList.add('firing');
-      setMode('active');
-      addFeedLine('bot', `Executing "${action}" motor sequence…`);
-      addMemory(`Ran physical action: ${action}`);
       setTimeout(() => btn.classList.remove('firing'), 1400);
+      sendMessage(btn.dataset.phrase);
     });
   });
 
@@ -349,16 +360,18 @@
     state.endpoint = document.getElementById('cfgEndpoint').value.trim();
     state.token = document.getElementById('cfgToken').value.trim();
     state.demo = state.endpoint.length === 0;
+    localStorage.setItem('meccanoid.endpoint', state.endpoint);
+    localStorage.setItem('meccanoid.token', state.token);
     addFeedLine('bot', state.demo
       ? 'No endpoint set — staying in demo mode.'
       : `Link settings saved. Will call ${state.endpoint}`);
   });
 
-  async function sendMessage(){
+  async function sendMessage(overrideText){
     const input = document.getElementById('msgInput');
-    const text = input.value.trim();
+    const text = (overrideText !== undefined ? overrideText : input.value).trim();
     if(!text) return;
-    input.value = '';
+    if(overrideText === undefined) input.value = '';
     addFeedLine('you', text);
     addMemory(`You said: ${text}`);
     setMode('active');
@@ -366,8 +379,8 @@
     const started = performance.now();
 
     if(state.demo){
-      // Simulated round trip so the dashboard is fully testable before the
-      // Raspberry Pi backend exists.
+      // Simulated round trip so the dashboard is fully testable before a
+      // backend is deployed.
       await new Promise(r => setTimeout(r, 550 + Math.random()*500));
       telLatency.textContent = Math.round(performance.now()-started) + 'ms';
       const reply = demoReply(text);
@@ -388,9 +401,19 @@
       });
       const data = await res.json();
       telLatency.textContent = Math.round(performance.now()-started) + 'ms';
+      if(!res.ok || data.error){
+        setMode('alert');
+        addFeedLine('bot', `Backend error: ${data.error || res.status}`);
+        addMemory('Backend error: ' + (data.error || res.status));
+        return;
+      }
       const reply = data.reply || '(no reply field in response)';
       addFeedLine('bot', reply);
-      addMemory(`Robot replied: ${reply}`);
+      const tags = [];
+      if(data.gesture) tags.push(`gesture=${data.gesture}`);
+      if(data.locomotion) tags.push(`locomotion=${data.locomotion}`);
+      if(data.mood) tags.push(`mood=${data.mood}`);
+      addMemory(`Robot replied: ${reply}` + (tags.length ? `  [${tags.join(', ')}]` : ''));
       setMode('idle');
     }catch(err){
       setMode('alert');
@@ -407,7 +430,7 @@
     return "(demo mode) Once linked to your Pi, this reply will come from the real Claude API call.";
   }
 
-  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('sendBtn').addEventListener('click', () => sendMessage());
   document.getElementById('msgInput').addEventListener('keydown', e => {
     if(e.key === 'Enter') sendMessage();
   });

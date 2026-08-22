@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+robot_memory.txt
+run_history.json
+venv/
+.env

@@ -58,12 +58,77 @@ Then fill in `CLOUD_BASE_URL`, `WIFI_SSID`, `WIFI_PASSWORD` at the top of
 in the cloud function's environment variables. That's the whole point of
 this split: a lost or dumped ESP32 never exposes your API key.
 
-## Swapping in real persistent memory
+## Swapping in real persistent memory (Firestore)
 
-`MemoryStore` in `cloud_function/main.py` is an in-memory list for local
-testing. Replace its two methods (`append`, `recent_text`) with real
-Firestore or Supabase calls for production — nothing else in the file
-needs to change.
+`MemoryStore` in `cloud_function/main.py` is an in-memory list — fine for
+local testing, but a deployed Cloud Function's process memory is wiped on
+every cold start, and there can be several instances at once, so it isn't
+actually "permanent memory that survives reboots" until it's backed by
+real storage.
+
+`firestore_memory.py` implements the same two-method interface
+(`append`, `recent_text`) against Firestore instead, so no other file
+needs to change — `main.py` picks the backend via `build_memory_store()`:
+
+```bash
+pip install google-cloud-firestore
+
+export MEMORY_BACKEND=firestore                    # default is "memory"
+export FIRESTORE_MEMORY_COLLECTION=meccanoid_memory # optional, this is the default
+export GOOGLE_CLOUD_PROJECT=your-project-id         # picked up automatically when deployed
+```
+
+Auth uses Application Default Credentials:
+- Deployed on Cloud Functions/Cloud Run — automatic, nothing to set up.
+- Local testing against a real project: `gcloud auth application-default login`
+- Local testing without touching real cloud resources — the Firestore
+  emulator:
+  ```bash
+  gcloud emulators firestore start --host-port=localhost:8080
+  export FIRESTORE_EMULATOR_HOST=localhost:8080
+  export MEMORY_BACKEND=firestore
+  ```
+
+Firestore setup (one-time, in the Firebase/GCP console or `gcloud`):
+```bash
+gcloud firestore databases create --location=nam5   # or your preferred region
+```
+No manual collection/schema creation needed — `firestore_memory.py`
+creates the `meccanoid_memory` collection on first write.
+
+## Dashboard hosting (Firebase Hosting)
+
+`docs/dashboard.html` is a static page with no build step — set its
+"Link configuration" panel to your deployed `/chat` URL and it talks
+directly to the cloud function (see `simulate_full_run.py`'s "How the
+pieces connect" diagram above). Firebase Hosting is a natural fit since
+you're likely already using a Firebase project for Firestore:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting     # public directory: docs
+firebase deploy --only hosting
+```
+
+That gives the dashboard a stable `https://your-project.web.app` URL to
+open from a phone — the endpoint field is saved in the browser's
+`localStorage`, so it only needs to be set once per device.
+
+## Gemini 2.5 setup
+
+`LLM_PROVIDER=gemini` is the default (see `cloud_llm_backends.py`), using
+`gemini-2.5-flash` — fast and cheap, a good match for a chat companion
+robot that may get messaged all day:
+
+```bash
+export GEMINI_API_KEY=...            # from https://aistudio.google.com/apikey
+export GEMINI_MODEL=gemini-2.5-flash # override if you want a different tier
+```
+
+Swap to Claude at any time with `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY`
+— nothing else in the stack (memory, gestures, dashboard) needs to change,
+same swappable-backend pattern as the Pi project's `llm_backend.py`.
 
 ## Running the simulation yourself
 

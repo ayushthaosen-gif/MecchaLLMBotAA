@@ -12,8 +12,16 @@ at something, no matter how the gesture is written; only its arms move
 under motor control.
 """
 
-from typing import Dict, List, Optional
+import re
+from typing import Dict, List, Optional, Tuple
 from rig_motion_engine import Gesture
+
+
+def _phrase_matches(phrase: str, lower_text: str) -> bool:
+    """Word-boundary match, not a bare substring test — otherwise 'bow'
+    would fire inside 'rainbow'/'elbow', 'sit down' inside 'visit downtown',
+    'rest' inside 'forest'/'interest', etc."""
+    return re.search(r"\b" + re.escape(phrase) + r"\b", lower_text) is not None
 
 REST_POSE: Dict[str, int] = {
     "right_shoulder": 90, "right_elbow": 90,
@@ -104,7 +112,7 @@ def match_gesture_from_text(text: str) -> Optional[str]:
     best_phrase_len = -1
     for name, phrases in KEYWORD_TRIGGERS.items():
         for phrase in phrases:
-            if phrase in lower and len(phrase) > best_phrase_len:
+            if _phrase_matches(phrase, lower) and len(phrase) > best_phrase_len:
                 best_gesture = name
                 best_phrase_len = len(phrase)
     return best_gesture
@@ -151,7 +159,7 @@ def match_chain_from_text(text: str) -> Optional[str]:
     best_name, best_len = None, -1
     for name, phrases in CHAIN_TRIGGERS.items():
         for phrase in phrases:
-            if phrase in lower and len(phrase) > best_len:
+            if _phrase_matches(phrase, lower) and len(phrase) > best_len:
                 best_name, best_len = name, len(phrase)
     return best_name
 
@@ -214,7 +222,14 @@ KEYWORD_TRIGGERS["dance_ekpal"] = [
 
 BEAT_MACARENA = 60 / 103  # 0.5825s
 
-MACARENA_ROUTINE = [
+# NOT a Gesture (List[Tuple[Dict[str,int], float]]) — each entry is a
+# 3-tuple (angles_or_None, hold_seconds, locomotion_action_or_None), so
+# passing MACARENA_ROUTINE straight to RigMotionEngine.play() will raise
+# ValueError unpacking a 3-tuple as 2. Use build_macarena_cycle() and drive
+# the arm/locomotion steps separately, the way test_macarena.py does.
+MacarenaStep = Tuple[Optional[Dict[str, int]], float, Optional[str]]
+
+MACARENA_ROUTINE: List[MacarenaStep] = [
     # 1: right arm out straight
     ({"right_shoulder": 100, "right_elbow": 90}, BEAT_MACARENA, None),
     # 2: left arm out straight

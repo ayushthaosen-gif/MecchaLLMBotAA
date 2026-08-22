@@ -10,8 +10,14 @@ pyserial, no requests) so it can be dropped anywhere and run with just:
 Everything the real project needs from outside packages is stubbed
 here inline: the LLM call, the servo bus, the WiFi/HTTP layer. The
 logic under test — gesture matching, non-blocking queueing, servo
-interpolation, locomotion kinematics — is the real logic, just
-extracted into one file instead of spread across the project's modules.
+interpolation, locomotion kinematics — is a reimplementation of the
+project's real logic, kept in sync by hand, NOT an import of the actual
+modules. That means a regression in the real pi-version/rig_gestures.py
+or esp32-cloud-version/cloud_function/main.py could pass here while
+still being broken in production. For a fast dependency-free sanity
+check that's an acceptable trade — but see test_real_modules.py for a
+second suite that imports and exercises the real production modules
+directly; run both before trusting a change.
 
 Covers, in order:
   1. Confirmed hardware model (4 servos, arms only, no head)
@@ -28,6 +34,7 @@ something regressed.
 import time
 import math
 import queue
+import re
 import threading
 import sys
 from dataclasses import dataclass, field
@@ -164,12 +171,18 @@ LOCOMOTION_TRIGGERS = {
 }
 
 
+def _phrase_matches(phrase: str, lower_text: str) -> bool:
+    """Word-boundary match, not a bare substring test — see
+    test_gesture_matching's false-positive regression cases below."""
+    return re.search(r"\b" + re.escape(phrase) + r"\b", lower_text) is not None
+
+
 def match_longest(text: str, trigger_table: dict) -> Optional[str]:
     lower = text.lower()
     best_name, best_len = None, -1
     for name, phrases in trigger_table.items():
         for p in phrases:
-            if p in lower and len(p) > best_len:
+            if _phrase_matches(p, lower) and len(p) > best_len:
                 best_name, best_len = name, len(p)
     return best_name
 
@@ -302,6 +315,14 @@ def test_gesture_matching():
     # the specificity bug this project actually hit and fixed:
     check("'wave' doesn't shadow 'wave with both'",
           match_longest("can you wave with both arms?", GESTURE_TRIGGERS) == "wave_both")
+    # substring false-positive bug: a bare `phrase in text` test would wrongly
+    # fire on these, since the trigger phrase appears inside a larger word.
+    check("'elbow' doesn't falsely trigger bow",
+          match_longest("my elbow hurts", GESTURE_TRIGGERS) is None)
+    check("'visit downtown' doesn't falsely trigger sit ('sit down')",
+          match_longest("let's visit downtown", GESTURE_TRIGGERS) is None)
+    check("'interest' doesn't falsely trigger sit ('rest')",
+          match_longest("no interest in that", GESTURE_TRIGGERS) is None)
 
 
 def test_locomotion_matching():
@@ -316,6 +337,8 @@ def test_locomotion_matching():
     for msg, expected in cases.items():
         got = match_longest(msg, LOCOMOTION_TRIGGERS)
         check(f"'{msg}' -> {expected}", got == expected, f"got {got!r}")
+    check("'welcome here' doesn't falsely trigger forward ('come here')",
+          match_longest("welcome here, everyone", LOCOMOTION_TRIGGERS) is None)
 
 
 def test_smooth_interpolation():

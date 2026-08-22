@@ -191,18 +191,29 @@ void pollCloudForCommand() {
         String gesture = doc["gesture"].as<String>();
         String cmdId = doc["id"].as<String>();
 
+        bool queued = true;
         if (gesture.length() > 0) {
           GestureRequest req;
           gesture.toCharArray(req.name, sizeof(req.name));
-          xQueueSend(gestureQueue, &req, 0);
+          // 0-tick timeout: never block the poll loop. If motionTask is
+          // still mid-gesture and gestureQueue (depth 4) is full, this
+          // fails — only ack when it actually succeeded, otherwise the
+          // cloud side marks the item delivered and never resends it,
+          // silently dropping the gesture.
+          queued = xQueueSend(gestureQueue, &req, 0) == pdTRUE;
+          if (!queued) {
+            Serial.println("gestureQueue full, dropping poll — will retry next cycle");
+          }
         }
 
-        HTTPClient ackHttp;
-        ackHttp.begin(String(CLOUD_BASE_URL) + "/ack_motion");
-        ackHttp.addHeader("Content-Type", "application/json");
-        String payload = "{\"id\":\"" + cmdId + "\"}";
-        ackHttp.POST(payload);
-        ackHttp.end();
+        if (queued) {
+          HTTPClient ackHttp;
+          ackHttp.begin(String(CLOUD_BASE_URL) + "/ack_motion");
+          ackHttp.addHeader("Content-Type", "application/json");
+          String payload = "{\"id\":\"" + cmdId + "\"}";
+          ackHttp.POST(payload);
+          ackHttp.end();
+        }
       }
     }
   }
@@ -214,16 +225,32 @@ void pollCloudForCommand() {
   // motion since it's not time-critical.
 }
 
-void setup() {
-  Serial.begin(115200);
-  ServoBus.begin(SERVO_BUS_BAUD, SERIAL_8N1, SERVO_BUS_RX_PIN, SERVO_BUS_TX_PIN);
+#define WIFI_CONNECT_TIMEOUT_MS 20000
 
+// Blocks up to WIFI_CONNECT_TIMEOUT_MS, returns whether it connected.
+// setup() no longer waits forever on a bad SSID/password, and loop()
+// reuses this to reconnect after a drop instead of just silently failing
+// every poll forever.
+bool connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - start > WIFI_CONNECT_TIMEOUT_MS) {
+      Serial.println("\nWiFi connect timed out, will keep retrying in loop()");
+      return false;
+    }
     delay(300);
     Serial.print(".");
   }
   Serial.println("\nWiFi connected: " + WiFi.localIP().toString());
+  return true;
+}
+
+void setup() {
+  Serial.begin(115200);
+  ServoBus.begin(SERVO_BUS_BAUD, SERIAL_8N1, SERVO_BUS_RX_PIN, SERVO_BUS_TX_PIN);
+
+  connectWiFi();
 
   busMutex = xSemaphoreCreateMutex();
   gestureQueue = xQueueCreate(4, sizeof(GestureRequest));
@@ -232,6 +259,16 @@ void setup() {
 }
 
 void loop() {
+  // Without this check, a WiFi drop after boot (router reboot, DHCP lease
+  // issue, roaming AP) leaves HTTPClient::begin/GET failing silently
+  // forever — the robot goes unresponsive until manually power-cycled.
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected, reconnecting...");
+    connectWiFi();
+    delay(POLL_INTERVAL_MS);
+    return;
+  }
+
   pollCloudForCommand();
   delay(POLL_INTERVAL_MS);
 }

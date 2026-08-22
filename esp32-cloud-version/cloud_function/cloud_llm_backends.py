@@ -45,7 +45,15 @@ class GeminiBackend(LLMBackend):
         resp = requests.post(url, json=body, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            reason = data.get("promptFeedback", {}).get("blockReason", "no candidates returned")
+            raise RuntimeError(f"Gemini returned no usable reply ({reason})")
+        parts = candidates[0].get("content", {}).get("parts") or []
+        if not parts:
+            finish_reason = candidates[0].get("finishReason", "unknown")
+            raise RuntimeError(f"Gemini returned an empty reply (finishReason={finish_reason})")
+        return parts[0].get("text", "").strip()
 
 
 class ClaudeBackend(LLMBackend):

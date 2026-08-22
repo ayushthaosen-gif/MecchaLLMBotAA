@@ -28,9 +28,12 @@ kept intentionally small so that's a one-class swap, not a rewrite.
 """
 
 import os
+import re
 import time
 import uuid
 import datetime
+import threading
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -44,6 +47,7 @@ from cloud_llm_backends import build_llm_backend
 
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # "gemini" or "claude"
 WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")
+MEMORY_BACKEND = os.environ.get("MEMORY_BACKEND", "memory")  # "memory" or "firestore"
 
 
 # ---------------------------------------------------------------------------
@@ -53,16 +57,45 @@ WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")
 # ---------------------------------------------------------------------------
 
 class MemoryStore:
+    # Caps growth on a long-lived warm Cloud Function instance — without a
+    # bound, _log and the string recent_text() rebuilds every call both grow
+    # unboundedly with conversation length. 500 turns is comfortably more
+    # than recent_text()'s own 4000-char tail ever uses.
+    MAX_ENTRIES = 500
+
     def __init__(self):
-        self._log = []  # list of (timestamp, role, text) — replace with a
-                         # Firestore collection or Supabase table in prod
+        self._log = deque(maxlen=self.MAX_ENTRIES)  # (timestamp, role, text)
+                         # — replace with a Firestore collection or Supabase
+                         # table in prod
+        self._lock = threading.Lock()
 
     def append(self, role: str, text: str) -> None:
-        self._log.append((datetime.datetime.now().isoformat(timespec="seconds"), role, text))
+        with self._lock:
+            self._log.append((datetime.datetime.now().isoformat(timespec="seconds"), role, text))
 
     def recent_text(self, max_chars: int = 4000) -> str:
-        blob = "\n".join(f"[{ts}] {role}: {text}" for ts, role, text in self._log)
+        with self._lock:
+            entries = list(self._log)
+        blob = "\n".join(f"[{ts}] {role}: {text}" for ts, role, text in entries)
         return blob[-max_chars:]
+
+
+def build_memory_store():
+    """Picks the memory backend from MEMORY_BACKEND. Default 'memory' keeps
+    local testing (simulate_full_run.py, test_real_modules.py) dependency-
+    free; 'firestore' gives real cross-cold-start persistence in production
+    — see firestore_memory.py's module docstring for setup. The Firestore
+    import is lazy so it's only a hard dependency when actually selected.
+    Re-reads the env var on every call (rather than the module-level
+    default captured at import time) so tests can select a backend without
+    needing to reimport this module."""
+    backend = os.environ.get("MEMORY_BACKEND", MEMORY_BACKEND)
+    if backend == "firestore":
+        from firestore_memory import FirestoreMemoryStore
+        return FirestoreMemoryStore()
+    if backend == "memory":
+        return MemoryStore()
+    raise ValueError(f"Unknown MEMORY_BACKEND '{backend}' — use 'memory' or 'firestore'")
 
 
 # ---------------------------------------------------------------------------
@@ -85,24 +118,47 @@ class QueuedItem:
 
 
 class SimpleQueue:
+    """Thread-safe: /chat (enqueue) and /next_*+/ack_* (poll/ack) are
+    designed to run concurrently — see module docstring — so mutation of
+    _pending must be locked, not just relying on CPython's GIL to serialize
+    individual list ops (which isn't a real guarantee, e.g. under a
+    multi-process WSGI server)."""
+
+    # Bounds memory growth and keeps next_undelivered()'s scan cheap on a
+    # long-lived warm instance: delivered items are dropped once the
+    # backlog exceeds this, instead of being kept forever.
+    MAX_DELIVERED_BACKLOG = 100
+
     def __init__(self):
         self._pending: list[QueuedItem] = []
+        self._lock = threading.Lock()
 
     def enqueue(self, value: Optional[str]) -> QueuedItem:
         item = QueuedItem(id=str(uuid.uuid4()), value=value)
-        self._pending.append(item)
+        with self._lock:
+            self._pending.append(item)
         return item
 
     def next_undelivered(self) -> Optional[QueuedItem]:
-        for item in self._pending:
-            if not item.delivered:
-                return item
+        with self._lock:
+            for item in self._pending:
+                if not item.delivered:
+                    return item
         return None
 
     def ack(self, item_id: str) -> None:
-        for item in self._pending:
-            if item.id == item_id:
-                item.delivered = True
+        with self._lock:
+            for item in self._pending:
+                if item.id == item_id:
+                    item.delivered = True
+            self._prune_locked()
+
+    def _prune_locked(self) -> None:
+        delivered = [i for i in self._pending if i.delivered]
+        if len(delivered) > self.MAX_DELIVERED_BACKLOG:
+            excess = len(delivered) - self.MAX_DELIVERED_BACKLOG
+            drop_ids = {i.id for i in delivered[:excess]}
+            self._pending = [i for i in self._pending if i.id not in drop_ids]
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +190,13 @@ LOCOMOTION_TRIGGERS = {
 }
 
 
+def _phrase_matches(phrase: str, lower_text: str) -> bool:
+    """Word-boundary match, not a bare substring test — otherwise 'bow'
+    would fire inside 'rainbow'/'elbow', 'sit down' inside 'visit downtown',
+    'come here' inside 'welcome here', etc."""
+    return re.search(r"\b" + re.escape(phrase) + r"\b", lower_text) is not None
+
+
 def match_locomotion(text: str) -> Optional[str]:
     """Same longest-match specificity rule as match_gesture below."""
     lower = text.lower()
@@ -141,7 +204,7 @@ def match_locomotion(text: str) -> Optional[str]:
     best_len = -1
     for name, phrases in LOCOMOTION_TRIGGERS.items():
         for p in phrases:
-            if p in lower and len(p) > best_len:
+            if _phrase_matches(p, lower) and len(p) > best_len:
                 best_name = name
                 best_len = len(p)
     return best_name
@@ -157,7 +220,7 @@ def match_gesture(text: str) -> Optional[str]:
     best_len = -1
     for gesture, phrases in KEYWORD_TRIGGERS.items():
         for p in phrases:
-            if p in lower and len(p) > best_len:
+            if _phrase_matches(p, lower) and len(p) > best_len:
                 best_gesture = gesture
                 best_len = len(p)
     return best_gesture
@@ -210,8 +273,8 @@ def classify_mood(reply_text: str) -> str:
 # ---------------------------------------------------------------------------
 
 class RobotBrainService:
-    def __init__(self, llm_client=None, eyes=None):
-        self.memory = MemoryStore()
+    def __init__(self, llm_client=None, eyes=None, memory=None):
+        self.memory = memory if memory is not None else build_memory_store()
         self.motion_queue = SimpleQueue()      # arm gestures
         self.locomotion_queue = SimpleQueue()  # wheel drive commands
         self.reply_queue = SimpleQueue()
@@ -253,7 +316,15 @@ class RobotBrainService:
         if self.eyes:
             self.eyes.set_status("thinking")  # instant, BEFORE the slow call below
 
-        reply_text = self._call_llm(system_prompt, message)  # slow — network/model call
+        try:
+            reply_text = self._call_llm(system_prompt, message)  # slow — network/model call
+        except Exception as exc:
+            # Mirrors brain.py's error handling: don't leave the robot
+            # having moved/turned but never having "spoken" — surface a
+            # clear error instead of an unhandled 500 with no reply_queue
+            # entry at all.
+            return {"error": f"LLM call failed: {exc}", "gesture": gesture, "locomotion": locomotion}
+
         self.memory.append("robot", reply_text)
         self.reply_queue.enqueue(reply_text)
 
@@ -296,6 +367,8 @@ try:
     def chat(req):
         body = req.get_json(silent=True) or {}
         result = _service.handle_chat(body.get("message", ""))
+        if "error" in result:
+            return jsonify(result), 502
         return jsonify(result)
 
     @functions_framework.http

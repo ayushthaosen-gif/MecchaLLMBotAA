@@ -57,7 +57,10 @@ class OllamaBackend(LLMBackend):
         )
         resp.raise_for_status()
         data = resp.json()
-        return data.get("message", {}).get("content", "").strip()
+        content = data.get("message", {}).get("content", "")
+        if not content:
+            raise RuntimeError(f"Ollama returned an empty reply: {data}")
+        return content.strip()
 
 
 class ClaudeBackend(LLMBackend):

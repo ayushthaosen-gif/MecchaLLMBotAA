@@ -20,6 +20,7 @@ Servo IDs (matches esp32_cloud_brain.ino's comment mapping):
     3 = left_elbow
 """
 
+import re
 from typing import Dict, List, Tuple, Optional
 
 Keyframe = Tuple[Dict[int, int], float]  # (angles, hold_seconds)
@@ -81,6 +82,13 @@ KEYWORD_TRIGGERS = {
 }
 
 
+def _phrase_matches(phrase: str, lower_text: str) -> bool:
+    """Word-boundary match, not a bare substring test — otherwise 'bow'
+    would fire inside 'rainbow'/'elbow', 'sit down' inside 'visit downtown',
+    'rest' inside 'forest'/'interest', etc."""
+    return re.search(r"\b" + re.escape(phrase) + r"\b", lower_text) is not None
+
+
 def match_gesture_from_text(text: str) -> Optional[str]:
     """Longest-match wins — prevents 'wave' (wave_right) from shadowing
     'wave with both' (wave_both) when both phrases appear in a message."""
@@ -88,6 +96,6 @@ def match_gesture_from_text(text: str) -> Optional[str]:
     best_gesture, best_len = None, -1
     for gesture_name, phrases in KEYWORD_TRIGGERS.items():
         for phrase in phrases:
-            if phrase in lower and len(phrase) > best_len:
+            if _phrase_matches(phrase, lower) and len(phrase) > best_len:
                 best_gesture, best_len = gesture_name, len(phrase)
     return best_gesture

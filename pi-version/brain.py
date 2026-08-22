@@ -60,7 +60,14 @@ def load_recent_memory(max_chars: int = 4000) -> str:
     without growing unbounded as the file gets larger over months of use."""
     if not MEMORY_FILE.exists():
         return ""
-    text = MEMORY_FILE.read_text(encoding="utf-8")
+    try:
+        text = MEMORY_FILE.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # A corrupted/binary/non-UTF8 file (e.g. from a crash mid-write)
+        # must not permanently break every /chat request — degrade to no
+        # memory context instead of raising.
+        print(f"[memory] failed to read {MEMORY_FILE}: {exc}")
+        return ""
     return text[-max_chars:]
 
 

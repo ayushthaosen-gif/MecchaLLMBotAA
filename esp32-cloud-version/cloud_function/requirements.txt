@@ -1,0 +1,17 @@
+# Core — needed to import main.py at all (Gemini/Claude backends call the
+# API over plain HTTPS via requests, no google-genai/anthropic SDK needed
+# for Gemini; anthropic is imported lazily only if LLM_PROVIDER=claude).
+requests>=2.31
+
+# Needed to actually deploy as a Cloud Function / run functions-framework
+# locally. Not required to import main.py or run simulate_full_run.py /
+# test_real_modules.py.
+functions-framework>=3.5
+flask>=3.0
+
+# Only needed if LLM_PROVIDER=claude.
+# anthropic>=0.40
+
+# Only needed if MEMORY_BACKEND=firestore (default is "memory", no extra
+# dependency). See firestore_memory.py's module docstring for setup.
+# google-cloud-firestore>=2.16
