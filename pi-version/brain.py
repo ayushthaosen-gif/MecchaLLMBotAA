@@ -196,6 +196,8 @@ def mirror_pose():
         return jsonify({"error": "DASHBOARD_TOKEN is required for mirror control"}), 503
     if request.headers.get("Authorization", "") != f"Bearer {DASHBOARD_TOKEN}":
         return jsonify({"error": "unauthorized"}), 401
+    if motion.is_busy:
+        return jsonify({"error": "gesture playback currently owns the arm bus"}), 409
     body = request.get_json(silent=True) or {}
     try:
         applied = mirror.apply(body.get("pose"))
