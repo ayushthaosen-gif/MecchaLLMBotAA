@@ -308,19 +308,53 @@ based on published community work, credited here per their use:
 
 ## Camera pose mirror
 
-The dashboard's /mirror page uses a phone or laptop front camera to draw a
-MediaPipe pose wireframe and send only four arm-joint angles to the Raspberry
-Pi architecture. Camera frames stay in the browser.
+The dashboard's `/mirror` page (both `docs/index.html`'s vanilla-JS port and
+`app/mirror/page.tsx`) uses a phone or laptop front camera, entirely on-device
+(nothing but 4 joint angles + an expression tag + an optional follow direction
+ever leaves the browser), to:
 
-On the Pi, configure ENABLE_MIRROR_CONTROL=1, a long random DASHBOARD_TOKEN,
-and MIRROR_ALLOWED_ORIGIN set to the dashboard's HTTPS origin. Enter the Pi's
-HTTPS /mirror_pose URL and the same token on the mirror page.
+- **Draw a MediaPipe pose wireframe** and send 4 arm-joint angles to the Pi
+  — drawing only requires *a* pose to be detected at all; sending only
+  requires shoulders/elbows/wrists specifically confident (no hips needed —
+  see `torsoReference()` in either mirror script for why hip visibility
+  isn't actually required for the angle math either).
+- **Track face expression** (a second MediaPipe model, `FaceLandmarker`)
+  and classify it into one of 7 hues (happy/sad/angry/surprised/fear/
+  disgust/neutral — see `EXPRESSION_COLORS` for the palette rationale),
+  sent as `mood` and applied to the robot's eye LEDs via `eyes.py`'s
+  `MOOD_COLORS`.
+- **Detect crossed wrists** as a "follow mode" toggle: crossing your wrists
+  records your current apparent distance (shoulder width in frame) as a
+  baseline, then the robot drives forward/backward in short bounded pulses
+  to hold that distance as you move closer or farther. Cross again to
+  release.
+- Cap the actual camera-loop framerate (detection + redraw) at 2x the
+  robot's own accepted update rate (40Hz vs. the backend's 20Hz limit) —
+  going faster wastes battery/CPU on frames neither the eye nor the robot
+  can use.
+- Show a real-time terminal-style log of what's actually happening (model
+  loads, camera access, tracking lock, uplink connect/ack, expression/
+  follow-mode transitions) — not decorative, every line is a real event.
 
-The controller is limited to 20 updates per second, clamps targets to 15-165
-degrees, limits each update to 12 degrees, rejects non-finite values, prevents
-scripted gestures and live tracking from fighting over the arm bus, and
-returns all joints to rest if updates stop for 750 ms. Test with simulated
-servos before enabling real hardware.
+On the Pi, configure `ENABLE_MIRROR_CONTROL=1`, a long random
+`DASHBOARD_TOKEN`, and `MIRROR_ALLOWED_ORIGIN` set to the dashboard's HTTPS
+origin. Enter the Pi's HTTPS `/mirror_pose` URL and the same token on the
+mirror page.
+
+`MirrorController` (`pi-version/mirror_control.py`) applies three
+independently rate-limited fields from the same feed, each with safety
+matched to how safety-critical it actually is:
+- **Arm angles** (`joints`, required): 20Hz max, clamped to 15-165°, each
+  update limited to 12° of movement, non-finite values rejected, returns
+  to rest if updates stop for 750ms.
+- **Mood** (`mood`, optional): 0.3s min interval — cosmetic, so a skipped
+  update is never an error, just a no-op.
+- **Locomotion** (`locomotion`, optional — `forward`/`backward`/`stop`):
+  0.5s min interval, each command a short self-bounding wheel pulse (never
+  a continuous motor command) at a gentler speed than scripted routines
+  use, since this is live teleop, not a scripted gesture.
+
+Test with simulated servos/motors before enabling real hardware.
 
 This mirrors shoulders and elbows, not fingers: the robot has no finger
 motors. It intentionally does not control the wheels or follow a person. Live

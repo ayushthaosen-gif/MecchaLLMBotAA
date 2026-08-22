@@ -223,6 +223,16 @@
   .hud-readout div{ background:#101316dd; padding:4px 8px; min-width:58px; }
   .hud-readout .k{ display:block; font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:.1em; color:var(--dim); }
   .hud-readout b{ font-family:'JetBrains Mono',monospace; font-size:11px; }
+  .hud-readout.wide{ grid-template-columns:repeat(3,1fr); }
+  .eye-pair{
+    position:absolute; right:8px; bottom:8px; z-index:3;
+    display:flex; gap:6px; background:#101316cc; border:1px solid var(--line);
+    border-radius:20px; padding:5px 8px;
+  }
+  .eye-dot{
+    width:10px; height:10px; border-radius:50%; background:var(--dim);
+    transition:background-color .3s ease, box-shadow .3s ease;
+  }
   .joint-chip{
     position:absolute; z-index:3; transform:translate(12px,-50%);
     display:flex; flex-direction:column; pointer-events:none;
@@ -346,12 +356,15 @@
       <video id="mirrorVideo" playsinline muted></video>
       <canvas id="mirrorCanvas"></canvas>
       <div class="hud-corners"><i></i><i></i><i></i><i></i></div>
-      <div class="hud-readout">
+      <div class="hud-readout wide">
         <div><span class="k">FPS</span><b id="hudFps">—</b></div>
         <div><span class="k">LATENCY</span><b id="hudLatency">—</b></div>
         <div><span class="k">LOCK</span><b id="hudLock" class="warn">SEARCHING</b></div>
         <div><span class="k">UPLINK</span><b id="hudUplink" class="dim-txt">OFF</b></div>
+        <div><span class="k">EXPRESSION</span><b id="hudExpression" class="dim-txt">—</b></div>
+        <div><span class="k">FOLLOW</span><b id="hudFollow" class="dim-txt">OFF</b></div>
       </div>
+      <div class="eye-pair" id="eyePair"><span class="eye-dot" id="eyeDotL"></span><span class="eye-dot" id="eyeDotR"></span></div>
       <div class="joint-chip" id="chipRS" style="display:none"><span class="jc-label">R-SHOULDER</span><span class="jc-angle">—</span></div>
       <div class="joint-chip" id="chipRE" style="display:none"><span class="jc-label">R-ELBOW</span><span class="jc-angle">—</span></div>
       <div class="joint-chip" id="chipLS" style="display:none"><span class="jc-label">L-SHOULDER</span><span class="jc-angle">—</span></div>
@@ -363,6 +376,9 @@
       <div><span class="k">R-ELBOW</span><b id="gridRE">—</b></div>
       <div><span class="k">L-SHOULDER</span><b id="gridLS">—</b></div>
       <div><span class="k">L-ELBOW</span><b id="gridLE">—</b></div>
+    </div>
+    <div class="cfg-note" style="margin-top:8px;">
+      Cross your wrists in front of your chest to toggle <b>follow mode</b> — the robot records your current apparent distance (shoulder width in frame) and drives forward/backward to hold it as you move closer or farther. Cross again to release.
     </div>
     <button class="cfg-save" id="mirrorToggle" style="margin-top:10px;">START CAMERA</button>
     <div class="cfg-row" style="margin-top:12px;">
@@ -385,6 +401,11 @@
       <input id="msgInput" type="text" placeholder="Say something to the robot…" />
       <button id="sendBtn">SEND</button>
     </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">System Log</div>
+    <div class="terminal" id="actionTerminal"><div class="tline"><span class="t-ts">[--:--:--]</span> <span class="t-sys">SYS</span> :: console ready<span class="term-cursor"></span></div></div>
   </div>
 
   <div class="panel">
@@ -427,6 +448,27 @@
   const statusMain = document.getElementById('statusMain');
   const telLatency = document.getElementById('telLatency');
   const telBattery = document.getElementById('telBattery');
+  const actionTerm = document.getElementById('actionTerminal');
+
+  // Same real-events-only terminal pattern as the mirror page's log —
+  // what phrase actually got sent, what the backend actually decided
+  // (gesture/locomotion/mood), how long it actually took. Not decorative.
+  const ACTION_TERM_MAX = 60;
+  function actionLog(kind, msg){
+    const ts = new Date().toLocaleTimeString([], { hour12: false });
+    actionTerm.querySelector('.term-cursor')?.parentElement?.remove();
+    const row = document.createElement('div');
+    row.className = 'tline';
+    row.innerHTML = `<span class="t-ts">[${ts}]</span> <span class="t-${kind}">${kind.toUpperCase()}</span> :: `;
+    row.appendChild(document.createTextNode(msg));
+    actionTerm.appendChild(row);
+    while(actionTerm.children.length > ACTION_TERM_MAX) actionTerm.removeChild(actionTerm.firstChild);
+    const cursorRow = document.createElement('div');
+    cursorRow.className = 'tline';
+    cursorRow.innerHTML = '<span class="term-cursor"></span>';
+    actionTerm.appendChild(cursorRow);
+    actionTerm.scrollTop = actionTerm.scrollHeight;
+  }
 
   const CIRC = 2 * Math.PI * 42; // ~264
 
@@ -510,6 +552,7 @@
     if(overrideText === undefined) input.value = '';
     addFeedLine('you', text);
     addMemory(`You said: ${text}`);
+    actionLog('net', `sending message: "${text}"`);
     setMode('active');
 
     const started = performance.now();
@@ -518,10 +561,12 @@
       // Simulated round trip so the dashboard is fully testable before a
       // backend is deployed.
       await new Promise(r => setTimeout(r, 550 + Math.random()*500));
-      telLatency.textContent = Math.round(performance.now()-started) + 'ms';
+      const elapsed = Math.round(performance.now()-started);
+      telLatency.textContent = elapsed + 'ms';
       const reply = demoReply(text);
       addFeedLine('bot', reply);
       addMemory(`Robot replied: ${reply}`);
+      actionLog('sys', `(demo mode) reply generated locally in ${elapsed}ms — no backend call made`);
       setMode('idle');
       return;
     }
@@ -536,11 +581,13 @@
         body: JSON.stringify({ message: text })
       });
       const data = await res.json();
-      telLatency.textContent = Math.round(performance.now()-started) + 'ms';
+      const elapsed = Math.round(performance.now()-started);
+      telLatency.textContent = elapsed + 'ms';
       if(!res.ok || data.error){
         setMode('alert');
         addFeedLine('bot', `Backend error: ${data.error || res.status}`);
         addMemory('Backend error: ' + (data.error || res.status));
+        actionLog('err', `backend returned ${data.error || res.status} after ${elapsed}ms`);
         return;
       }
       const reply = data.reply || '(no reply field in response)';
@@ -550,9 +597,14 @@
       if(data.locomotion) tags.push(`locomotion=${data.locomotion}`);
       if(data.mood) tags.push(`mood=${data.mood}`);
       addMemory(`Robot replied: ${reply}` + (tags.length ? `  [${tags.join(', ')}]` : ''));
+      actionLog('net', `backend replied in ${elapsed}ms`);
+      if(data.gesture) actionLog('track', `gesture matched: ${data.gesture} — running on arm bus`);
+      if(data.locomotion) actionLog('track', `locomotion matched: ${data.locomotion} — running on wheel motors`);
+      if(data.mood) actionLog('sys', `mood: ${data.mood} — eyes updated`);
       setMode('idle');
     }catch(err){
       setMode('alert');
+      actionLog('err', `link error: ${err.message}`);
       addFeedLine('bot', 'Link error — could not reach the robot backend.');
       addMemory('Comms error: ' + err.message);
     }
@@ -582,7 +634,7 @@
   right_elbow,left_shoulder,left_elbow}} to the /mirror_pose endpoint.
 -->
 <script type="module">
-import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/vision_bundle.mjs";
+import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/vision_bundle.mjs";
 
 (function(){
   const clamp = (v, a=15, b=165) => Math.max(a, Math.min(b, v));
@@ -614,6 +666,69 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     return { shoulder: clamp(30 + elevation*2/3), elbow: clamp(angle(l[shoulder], l[elbow], l[wrist])) };
   }
 
+  // --- Face expression -> eye color ---------------------------------------
+  // Palette designed for 7 distinct, immediately-readable hues, each with
+  // an established color/emotion association rather than an arbitrary
+  // pick. UI-only hex values — the real hardware command sent to the
+  // robot is just the mood NAME (see eyes.py's MOOD_COLORS for the actual
+  // 0-7-per-channel LED intensities); the two color systems are matched
+  // in spirit, not pixel-for-pixel, since they're optimized for different
+  // media (a bright dark-UI swatch vs. real LED brightness levels).
+  const EXPRESSION_COLORS = {
+    neutral:   '#4fd8e0', // cyan — matches this dashboard's own idle/default hue
+    happy:     '#ffd23f', // warm gold — joy, universally positive
+    sad:       '#3d6fd6', // deep blue — classic "sad" association
+    angry:     '#ef4444', // red — danger/anger signal
+    surprised: '#c65fff', // violet-magenta — high-energy jolt, distinct hue
+    fear:      '#9b6dff', // muted violet — uneasy, dimmer than surprised
+    disgust:   '#7cc242', // sickly green — nausea association
+  };
+
+  // Heuristic classifier over MediaPipe FaceLandmarker's 52 blendshape
+  // categories — not a trained expression model, just the handful of
+  // blendshapes that most directly signal each expression, scored and
+  // picked by whichever is most dominant. A 0.35 floor keeps a resting
+  // face classified as "neutral" instead of flickering between
+  // low-confidence guesses.
+  function classifyExpression(blendshapes){
+    if(!blendshapes || !blendshapes.length) return 'neutral';
+    const score = name => blendshapes.find(b => b.categoryName === name)?.score || 0;
+    const smile = (score('mouthSmileLeft') + score('mouthSmileRight')) / 2;
+    const frown = (score('mouthFrownLeft') + score('mouthFrownRight')) / 2;
+    const browDown = (score('browDownLeft') + score('browDownRight')) / 2;
+    const eyeWide = (score('eyeWideLeft') + score('eyeWideRight')) / 2;
+    const jawOpen = score('jawOpen');
+    const browUp = score('browInnerUp');
+    const noseSneer = (score('noseSneerLeft') + score('noseSneerRight')) / 2;
+
+    // "fear" is deliberately not classified here — its blendshape
+    // signature (wide eyes + raised inner brows) overlaps too heavily
+    // with "surprised" to tell apart reliably from a handful of scores;
+    // it stays in EXPRESSION_COLORS/eyes.py's palette for a future,
+    // better classifier rather than guessing wrong most of the time.
+    const candidates = [
+      { name: 'happy',     v: smile },
+      { name: 'surprised', v: eyeWide*0.5 + jawOpen*0.3 + browUp*0.2 },
+      { name: 'angry',     v: browDown },
+      { name: 'sad',       v: frown*0.7 + browUp*0.3 },
+      { name: 'disgust',   v: noseSneer },
+    ];
+    candidates.sort((a,b) => b.v - a.v);
+    return candidates[0].v > 0.35 ? candidates[0].name : 'neutral';
+  }
+
+  // --- Crossed-wrists "follow mode" toggle ---------------------------------
+  // Detects arms crossed in front of the chest: each wrist has moved to
+  // the OPPOSITE side of the body midline from its own shoulder. Robust
+  // to mirroring since it only compares each side's own wrist/shoulder
+  // pair, never an absolute left/right in screen space.
+  function wristsCrossed(l){
+    const midX = (l[11].x + l[12].x) / 2;
+    const leftCrossed = (l[15].x - midX) * (l[11].x - midX) < 0;
+    const rightCrossed = (l[16].x - midX) * (l[12].x - midX) < 0;
+    return leftCrossed && rightCrossed;
+  }
+
   const video = document.getElementById('mirrorVideo');
   const canvas = document.getElementById('mirrorCanvas');
   const wrap = document.getElementById('cameraWrap');
@@ -624,6 +739,10 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
   const hudLatency = document.getElementById('hudLatency');
   const hudLock = document.getElementById('hudLock');
   const hudUplink = document.getElementById('hudUplink');
+  const hudExpression = document.getElementById('hudExpression');
+  const hudFollow = document.getElementById('hudFollow');
+  const eyeDotL = document.getElementById('eyeDotL');
+  const eyeDotR = document.getElementById('eyeDotR');
   const chips = {
     right_shoulder: { el: document.getElementById('chipRS'), grid: document.getElementById('gridRS') },
     right_elbow:    { el: document.getElementById('chipRE'), grid: document.getElementById('gridRE') },
@@ -661,17 +780,39 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     termEl.scrollTop = termEl.scrollHeight;
   }
 
-  let running = false, raf = 0, tracker = null, stream = null;
+  let running = false, raf = 0, tracker = null, faceTracker = null, stream = null;
   let lastSent = 0, sending = false, smoothed = null;
   let fps = 0, lastFrame = performance.now();
   let lockState = 'searching'; // 'searching' | 'locking' | 'tracking'
   let uplinkActive = false;
+  let currentExpression = 'neutral';
+
+  // Follow mode: crossing wrists toggles it on/off (debounced so a held
+  // cross doesn't flap). While on, the shoulder-width in frame at the
+  // moment of toggling becomes the baseline "hold this distance" target.
+  let followMode = false, followBaselineWidth = null, lastCrossedState = false, lastToggleAt = 0;
+  let lastLoggedLocomotion = null;
+  const FOLLOW_TOGGLE_DEBOUNCE_MS = 1200;
+  const FOLLOW_DEAD_BAND = 0.08; // 8% width change tolerated before driving
+
+  // Visual/detection framerate cap: the backend only accepts arm-angle
+  // updates at 20Hz (MirrorController.MIN_INTERVAL_S) — anything the
+  // camera loop computes faster than roughly 2x that is wasted work the
+  // user's device pays battery/CPU for with no benefit, since neither the
+  // eye nor the robot can use it. Detection + drawing are throttled to
+  // this interval; requestAnimationFrame itself still runs at the
+  // display's native rate for smooth scheduling, but skips the expensive
+  // work in between.
+  const BOT_MAX_HZ = 20;               // MirrorController.MIN_INTERVAL_S
+  const VISUAL_HZ_CAP = BOT_MAX_HZ * 2; // 2x the bot's real rate, no more
+  const VISUAL_FRAME_INTERVAL_MS = 1000 / VISUAL_HZ_CAP;
+  let lastProcessedAt = 0;
 
   async function start(){
     try{
       toggleBtn.disabled = true;
       camStatusText.textContent = 'Loading on-device pose model…';
-      termLog('sys', 'initializing pose engine');
+      termLog('sys', 'initializing pose + face engines');
       termLog('net', 'fetching WASM runtime...');
       const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm');
       termLog('net', 'WASM runtime ready');
@@ -681,7 +822,15 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
           baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate: 'GPU' },
           runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: .6, minTrackingConfidence: .6,
         });
-        termLog('net', 'landmark model ready');
+        termLog('net', 'pose model ready');
+      }
+      if(!faceTracker){
+        termLog('net', 'loading face_landmarker model (expression tracking)...');
+        faceTracker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', delegate: 'GPU' },
+          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true,
+        });
+        termLog('net', 'face model ready');
       }
       camStatusText.textContent = 'Requesting camera access…';
       termLog('cam', 'requesting camera access...');
@@ -693,9 +842,10 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
       running = true;
       toggleBtn.textContent = 'STOP MIRROR';
       camStatusText.textContent = 'Tracking locally';
-      lastFrame = performance.now();
+      lastFrame = performance.now(); lastProcessedAt = 0;
       lockState = 'searching'; uplinkActive = false;
-      termLog('sys', 'tracking loop started');
+      followMode = false; followBaselineWidth = null; lastCrossedState = false;
+      termLog('sys', `tracking loop started (visuals capped ${VISUAL_HZ_CAP}Hz — 2x the robot's own ${BOT_MAX_HZ}Hz limit)`);
       loop();
     }catch(e){
       const msg = e instanceof Error ? e.message : 'Unable to start camera';
@@ -714,11 +864,22 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     toggleBtn.textContent = 'START CAMERA';
     hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
     hudUplink.textContent = 'OFF'; hudUplink.className = 'dim-txt';
+    hudExpression.textContent = '—'; hudExpression.className = 'dim-txt';
+    hudFollow.textContent = 'OFF'; hudFollow.className = 'dim-txt';
+    eyeDotL.style.background = ''; eyeDotL.style.boxShadow = '';
+    eyeDotR.style.background = ''; eyeDotR.style.boxShadow = '';
     for(const k in chips) chips[k].el.style.display = 'none';
+    if(followMode){ termLog('track', 'follow mode released (camera stopped)'); }
+    followMode = false; followBaselineWidth = null;
     if(report){
       camStatusText.textContent = 'Camera stopped — robot auto-rests within 750 ms.';
       termLog('sys', 'camera stopped — robot auto-rests within 750ms');
     }
+  }
+
+  function setEyeColor(hex){
+    eyeDotL.style.background = hex; eyeDotL.style.boxShadow = `0 0 8px ${hex}`;
+    eyeDotR.style.background = hex; eyeDotR.style.boxShadow = `0 0 8px ${hex}`;
   }
 
   function drawJointMarker(ctx, x, y){
@@ -735,17 +896,30 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
 
   function loop(){
     if(!running) return;
-    if(!video || !canvas || !tracker || video.readyState < 2){ raf = requestAnimationFrame(loop); return; }
+    if(!video || !canvas || !tracker || !faceTracker || video.readyState < 2){ raf = requestAnimationFrame(loop); return; }
+
+    const now = performance.now();
+    // Framerate cap: only do the expensive work (pose+face detection,
+    // canvas redraw) at VISUAL_HZ_CAP, not on every requestAnimationFrame
+    // tick (which can be 90/120/144Hz on some displays) — see the cap's
+    // definition above for why 2x the robot's own rate is the ceiling of
+    // anything actually useful here.
+    if(now - lastProcessedAt < VISUAL_FRAME_INTERVAL_MS){
+      raf = requestAnimationFrame(loop);
+      return;
+    }
+    lastProcessedAt = now;
+
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const now = performance.now();
     const dt = now - lastFrame; lastFrame = now;
     if(dt > 0) fps = fps ? fps*.9 + (1000/dt)*.1 : 1000/dt;
 
     const t0 = performance.now();
     const result = tracker.detectForVideo(video, now);
+    const faceResult = faceTracker.detectForVideo(video, now);
     const latencyMs = performance.now() - t0;
 
     // Two separate gates, not one: whether to DRAW (loose — any pose at
@@ -764,7 +938,21 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
     hudFps.textContent = Math.round(fps) || '—';
     hudLatency.textContent = poseDetected ? `${Math.round(latencyMs)}ms` : '—';
 
+    // Face expression -> eye color. Independent of arm tracking (a face
+    // can be visible with arms out of frame, or vice versa), so this runs
+    // regardless of poseDetected.
+    const blendshapes = faceResult.faceBlendshapes?.[0]?.categories;
+    const expression = classifyExpression(blendshapes);
+    if(expression !== currentExpression){
+      currentExpression = expression;
+      hudExpression.textContent = expression.toUpperCase();
+      hudExpression.className = expression === 'neutral' ? 'dim-txt' : 'ok';
+      setEyeColor(EXPRESSION_COLORS[expression]);
+      termLog('track', `expression: ${expression}`);
+    }
+
     let streaming = false;
+    let locomotionAction = null;
     if(poseDetected){
       const l = result.landmarks[0];
       new DrawingUtils(ctx).drawConnectors(l, PoseLandmarker.POSE_CONNECTIONS, { color: armsConfident ? '#4fd8e0aa' : '#4fd8e055', lineWidth: 2 });
@@ -775,6 +963,44 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
       const raw = { right_shoulder: right.shoulder, right_elbow: right.elbow, left_shoulder: left.shoulder, left_elbow: left.elbow };
       const prev = smoothed || raw;
       smoothed = Object.fromEntries(Object.entries(raw).map(([k,x]) => [k, Math.round(prev[k]*.7 + x*.3)]));
+
+      // Crossed-wrists follow-mode toggle, edge-triggered with a debounce
+      // so holding the pose doesn't flap it on/off repeatedly.
+      const crossedNow = armsConfident && wristsCrossed(l);
+      if(crossedNow && !lastCrossedState && now - lastToggleAt > FOLLOW_TOGGLE_DEBOUNCE_MS){
+        lastToggleAt = now;
+        followMode = !followMode;
+        if(followMode){
+          followBaselineWidth = Math.abs(l[12].x - l[11].x) * canvas.width;
+          termLog('track', `follow mode ON — baseline shoulder width ${followBaselineWidth.toFixed(0)}px`);
+        }else{
+          followBaselineWidth = null;
+          termLog('track', 'follow mode OFF');
+        }
+      }
+      lastCrossedState = crossedNow;
+
+      if(followMode && followBaselineWidth){
+        const currentWidth = Math.abs(l[12].x - l[11].x) * canvas.width;
+        const ratio = currentWidth / followBaselineWidth;
+        // Smaller in frame than baseline => person moved farther away =>
+        // drive forward to close the gap. Larger => moved closer => back
+        // away. Dead-band avoids jittering on ordinary sway/breathing.
+        const wanted = ratio < 1 - FOLLOW_DEAD_BAND ? 'forward'
+                     : ratio > 1 + FOLLOW_DEAD_BAND ? 'backward'
+                     : 'stop';
+        locomotionAction = wanted;
+        if(wanted !== lastLoggedLocomotion){
+          termLog('track', `follow: ${wanted} (width ${currentWidth.toFixed(0)}px vs baseline ${followBaselineWidth.toFixed(0)}px)`);
+          lastLoggedLocomotion = wanted;
+        }
+        hudFollow.textContent = `ON (${wanted.toUpperCase()})`;
+        hudFollow.className = wanted === 'stop' ? 'ok' : 'partial';
+      }else{
+        hudFollow.textContent = followMode ? 'ON' : 'OFF';
+        hudFollow.className = followMode ? 'ok' : 'dim-txt';
+        lastLoggedLocomotion = null;
+      }
 
       for(const key in chips){
         const idx = JOINT_LANDMARK[key];
@@ -807,10 +1033,12 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
         lastSent = now; sending = true; streaming = true;
         const token = localStorage.getItem('meccanoid.token') || '';
         if(!uplinkActive){ termLog('uplink', `connecting to ${endpoint}`); }
+        const payload = { joints: smoothed, mood: currentExpression };
+        if(locomotionAction) payload.locomotion = locomotionAction;
         fetch(endpoint, {
           method: 'POST',
           headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
-          body: JSON.stringify({ joints: smoothed }),
+          body: JSON.stringify(payload),
         }).then(r => {
           if(!r.ok) throw new Error(`Mirror endpoint HTTP ${r.status}`);
           if(!uplinkActive){ termLog('uplink', `first frame acknowledged`); uplinkActive = true; }
@@ -827,6 +1055,9 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdel
       hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
       hudUplink.textContent = endpointInput.value.trim() ? 'IDLE' : 'OFF';
       hudUplink.className = 'dim-txt';
+      hudFollow.textContent = followMode ? 'ON' : 'OFF';
+      hudFollow.className = followMode ? 'ok' : 'dim-txt';
+      lastLoggedLocomotion = null;
       for(const k in chips) chips[k].el.style.display = 'none';
       if(lockState !== 'searching'){ termLog('track', 'pose lost — searching'); lockState = 'searching'; uplinkActive = false; }
     }

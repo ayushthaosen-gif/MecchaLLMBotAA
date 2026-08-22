@@ -19,6 +19,9 @@
 .hudReadout b.partial{color:#c9a8ff}
 .hudReadout b.dim{color:var(--dim)}
 .hudReadout.live{box-shadow:0 0 18px #4fd8e030}
+.hudReadout.wide{grid-template-columns:repeat(3,1fr)}
+.eyePair{position:absolute;right:8px;bottom:8px;z-index:3;display:flex;gap:6px;background:#101316cc;border:1px solid var(--line);border-radius:20px;padding:5px 8px}
+.eyeDot{width:10px;height:10px;border-radius:50%;background:var(--dim);transition:background-color .3s ease,box-shadow .3s ease}
 .jointChip{position:absolute;z-index:3;transform:translate(14px,-50%);display:flex;flex-direction:column;background:#101316d9;border:1px solid #4fd8e060;border-radius:4px;padding:2px 6px;pointer-events:none;box-shadow:0 0 10px #4fd8e025}
 .jointChipLabel{font:7px var(--font-geist-mono);letter-spacing:.08em;color:var(--dim)}
 .jointChipAngle{font:700 12px var(--font-geist-mono);color:var(--cyan)}

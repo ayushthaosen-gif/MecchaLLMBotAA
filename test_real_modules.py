@@ -386,9 +386,95 @@ def test_servo_protocol():
         sys.modules.pop("servo_controller", None)
 
 
+def test_eyes_sync_and_expression_colors():
+    print("\n=== 6. eyes.py sync + expression color palette (real modules) ===")
+    import filecmp
+    paths = [
+        os.path.join(PI_VERSION, "eyes.py"),
+        os.path.join(ROOT, "standalone-tools", "eyes.py"),
+        os.path.join(ESP32_CLOUD, "cloud_function", "eyes.py"),
+    ]
+    check("all three eyes.py copies are byte-identical",
+          filecmp.cmp(paths[0], paths[1], shallow=False) and filecmp.cmp(paths[0], paths[2], shallow=False))
+
+    sys.path.insert(0, PI_VERSION)
+    try:
+        import eyes as eyes_mod  # noqa: real import
+        expected = {"happy", "calm", "excited", "concerned", "neutral",
+                    "angry", "sad", "surprised", "fear", "disgust"}
+        check("MOOD_COLORS has all LLM-reply + face-expression moods",
+              expected.issubset(set(eyes_mod.MOOD_COLORS)),
+              f"missing {expected - set(eyes_mod.MOOD_COLORS)}")
+        for mood, rgb in eyes_mod.MOOD_COLORS.items():
+            check(f"{mood}: color {rgb} within 0-7 per channel",
+                  all(0 <= c <= 7 for c in rgb), f"got {rgb}")
+        # Expression colors must be distinct hues from each other and from
+        # the LLM-mood set — the whole point of designing them separately.
+        expression_moods = ["angry", "sad", "surprised", "fear", "disgust"]
+        colors = [eyes_mod.MOOD_COLORS[m] for m in expression_moods]
+        check("all 5 expression colors are pairwise distinct",
+              len(set(colors)) == len(colors), f"got {colors}")
+
+        module = eyes_mod.EyeModule(simulate=True)
+        applied = module.set_mood("surprised")
+        check("set_mood('surprised') stores the surprised color",
+              module.current_color == eyes_mod.MOOD_COLORS["surprised"])
+        module.set_mood("not_a_real_mood")
+        check("unknown mood falls back to neutral",
+              module.current_color == eyes_mod.MOOD_COLORS["neutral"])
+    finally:
+        sys.path.remove(PI_VERSION)
+        sys.modules.pop("eyes", None)
+
+
+def test_mirror_control_mood_and_locomotion():
+    print("\n=== 7. pi-version/mirror_control.py: mood + follow-mode locomotion (real module) ===")
+    sys.path.insert(0, PI_VERSION)
+    try:
+        import servo_controller as sc
+        import eyes as eyes_mod
+        import locomotion as loco_mod
+        from mirror_control import MirrorController, LOCOMOTION_ACTIONS
+
+        bus = sc.ServoBus(sc.ServoBusConfig(simulate=True, servo_count=4))
+        eye = eyes_mod.EyeModule(simulate=True)
+        drive = loco_mod.DriveMotors(loco_mod.DriveConfig(simulate=True))
+        mc = MirrorController(bus, eyes=eye, drive=drive)
+
+        check("apply_mood applies and returns the mood",
+              mc.apply_mood("happy") == "happy")
+        check("apply_mood is rate-limited on immediate repeat",
+              mc.apply_mood("angry") is None)
+        check("eye color actually changed to happy's color",
+              eye.current_color == eyes_mod.MOOD_COLORS["happy"])
+
+        check("apply_locomotion('forward') applies and returns the action",
+              mc.apply_locomotion("forward") == "forward")
+        check("apply_locomotion is rate-limited on immediate identical repeat",
+              mc.apply_locomotion("forward") is None)
+        check("apply_locomotion rejects an invalid action",
+              mc.apply_locomotion("sideways") is None)
+        check("LOCOMOTION_ACTIONS is exactly forward/backward/stop",
+              LOCOMOTION_ACTIONS == {"forward", "backward", "stop"})
+
+        # No eyes/drive wired up -> both must no-op cleanly, never raise.
+        bare = MirrorController(sc.ServoBus(sc.ServoBusConfig(simulate=True, servo_count=4)))
+        check("apply_mood with no eyes wired up returns None, doesn't raise",
+              bare.apply_mood("happy") is None)
+        check("apply_locomotion with no drive wired up returns None, doesn't raise",
+              bare.apply_locomotion("forward") is None)
+        bare.close()
+        mc.close()
+    finally:
+        sys.path.remove(PI_VERSION)
+        for m in ("servo_controller", "eyes", "locomotion", "mirror_control"):
+            sys.modules.pop(m, None)
+
+
 if __name__ == "__main__":
     tests = [test_rig_gestures, test_flat_gestures, test_robot_brain_service,
-              test_dead_band_smoothing, test_memory_backend_selection, test_servo_protocol]
+              test_dead_band_smoothing, test_memory_backend_selection, test_servo_protocol,
+              test_eyes_sync_and_expression_colors, test_mirror_control_mood_and_locomotion]
     failed = False
     for t in tests:
         try:

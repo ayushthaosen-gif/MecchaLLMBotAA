@@ -31,6 +31,8 @@ from motion_engine import MotionEngine
 from gestures import match_gesture_from_text
 from llm_backend import build_llm_backend
 from mirror_control import MirrorController
+from eyes import EyeModule
+from locomotion import DriveMotors, DriveConfig
 
 # ---------------------------------------------------------------------------
 # Config
@@ -50,7 +52,12 @@ llm = build_llm_backend(LLM_BACKEND)
 bus = ServoBus(ServoBusConfig(simulate=SIMULATE_SERVOS, servo_count=4))
 motion = MotionEngine(bus)
 motion.start()
-mirror = MirrorController(bus) if ENABLE_MIRROR_CONTROL else None
+# eyes/drive are only constructed when mirror control is actually enabled —
+# they exist purely to give the mirror endpoint's optional mood/locomotion
+# fields somewhere to go (see mirror_control.py's apply_mood/apply_locomotion).
+eyes = EyeModule(simulate=SIMULATE_SERVOS) if ENABLE_MIRROR_CONTROL else None
+drive = DriveMotors(DriveConfig(simulate=SIMULATE_SERVOS)) if ENABLE_MIRROR_CONTROL else None
+mirror = MirrorController(bus, eyes=eyes, drive=drive) if ENABLE_MIRROR_CONTROL else None
 
 app = Flask(__name__)
 
@@ -207,7 +214,13 @@ def mirror_pose():
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 429
-    return jsonify({"applied": applied})
+    # Mood (eye color from face expression) and locomotion (follow-mode
+    # wheel pulses) are optional, best-effort side channels on the same
+    # feed — unlike the arm angles above, a skipped/rate-limited mood or
+    # locomotion update is never an error, just a no-op this poll.
+    mood_applied = mirror.apply_mood(body.get("mood"))
+    locomotion_applied = mirror.apply_locomotion(body.get("locomotion"))
+    return jsonify({"applied": applied, "mood": mood_applied, "locomotion": locomotion_applied})
 
 
 @app.route("/status", methods=["GET"])

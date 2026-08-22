@@ -5,6 +5,55 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Added (face expression tracking, follow mode, action log)
+- **Face expression tracking**: a second on-device MediaPipe model
+  (`FaceLandmarker` + blendshapes) classifies expression into 7 hues —
+  happy/sad/angry/surprised/fear/disgust/neutral — via a heuristic
+  scorer over the relevant blendshape categories (mouth smile/frown,
+  brow down/up, eye wide, jaw open, nose sneer). Sent as `mood` on the
+  same `/mirror_pose` feed and applied to the robot's eye LEDs.
+- **Expression color palette**, designed (not arbitrary) for 7 distinct,
+  immediately-readable hues with established color/emotion associations:
+  happy=gold, sad=deep blue, angry=red, surprised=violet-magenta,
+  fear=muted violet, disgust=sickly green, neutral=cyan. Added to
+  `eyes.py`'s `MOOD_COLORS` (0-7 LED intensities) and a matching
+  UI-hex `EXPRESSION_COLORS` table in both mirror pages — the two are
+  matched in spirit, not pixel-for-pixel, since they're optimized for
+  different media (bright dark-UI swatch vs. real LED brightness).
+  `fear` is deliberately excluded from the auto-classifier — its
+  blendshape signature overlaps too heavily with `surprised` to
+  distinguish reliably from a handful of scores.
+- **Distance-holding follow mode**: crossing your wrists in front of your
+  chest (detected via each wrist vs. its own shoulder's side of the body
+  midline — robust to mirroring) toggles a mode that records your
+  current shoulder-width-in-frame as a baseline, then sends
+  `locomotion: "forward"/"backward"` to hold that apparent distance as
+  you move. Backend (`mirror_control.py`'s new `apply_locomotion()`)
+  drives the wheels in short, self-bounding pulses (`DriveMotors`
+  already stops itself after each pulse — no separate watchdog needed),
+  rate-limited to 0.5s, gentler speed than scripted routines since this
+  is live teleop.
+- **Visual framerate cap**: the camera loop's expensive work (pose+face
+  detection, canvas redraw) is now capped at 40Hz — 2x the backend's own
+  20Hz accepted update rate — instead of running at the display's native
+  refresh rate (which can be 90/120/144Hz). Detecting/drawing faster than
+  that is wasted battery/CPU; neither the eye nor the robot can use it.
+- **Real-time action log** on the main dashboard (both `docs/index.html`
+  and `app/page.tsx`), same terminal-style pattern as the mirror page's
+  existing log: what message was actually sent, what the backend
+  actually decided (gesture/locomotion/mood), how long it actually took.
+- `mirror_control.py`: `apply_mood()` and `apply_locomotion()`, each with
+  their own (looser than the 20Hz arm limit) rate limit — cosmetic/
+  coarse updates don't need to share the arm angles' safety-critical
+  cadence. `MirrorController` now optionally takes `eyes`/`drive`
+  instances; `brain.py` constructs and wires them when
+  `ENABLE_MIRROR_CONTROL=1`.
+- Synced `eyes.py` across all three copies (`pi-version/`,
+  `standalone-tools/`, `esp32-cloud-version/cloud_function/`) — they'd
+  drifted (only the cloud copy had gesture eye-cues); added a
+  `pi-version/eyes.py` copy since `brain.py` needed one to wire mood
+  support in, and it didn't exist there before.
+
 ### Fixed (pose mirror wireframe never rendering)
 - Root cause of "wireframe/joints not visible" in the camera mirror
   (both `docs/index.html` and `app/mirror/page.tsx`): drawing was gated

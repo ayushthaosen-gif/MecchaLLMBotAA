@@ -36,11 +36,24 @@ STATUS_COLORS = {
 }
 
 MOOD_COLORS = {
+    # LLM-reply moods (classify_mood() in cloud_function/main.py) — how the
+    # robot's *voice* felt.
     "happy":     (6, 5, 0),   # warm yellow
     "calm":      (0, 3, 6),   # soft blue
     "excited":   (6, 0, 4),   # pink/magenta
     "concerned": (6, 2, 0),   # orange
     "neutral":   (3, 3, 3),   # warm white
+
+    # Face-expression moods (from on-device camera tracking — see
+    # docs/index.html / app/mirror/page.tsx's classifyExpression()) — how
+    # the *person looking at it* looks. Deliberately distinct hues from
+    # the LLM-mood set above so the two sources never look ambiguous even
+    # though they share one set_mood() call:
+    "angry":     (7, 0, 0),   # full red — sharper/more saturated than "concerned"'s orange
+    "sad":       (0, 1, 7),   # deep saturated blue — darker than "calm"'s soft blue
+    "surprised": (4, 0, 7),   # violet — bright jolt, distinct from "excited"'s pink
+    "fear":      (3, 0, 5),   # muted purple — dimmer/uneasier than "surprised"
+    "disgust":   (0, 5, 2),   # sickly green — unique hue, classic nausea association
 }
 
 
