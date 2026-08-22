@@ -1,6 +1,7 @@
 "use client";
 import {FormEvent,useEffect,useState} from "react";
 const actions=[["Wave","wave hello"],["Wave both","wave with both arms"],["Bow","take a bow"],["Shrug","shrug"],["Point","point over there"],["Dance","let's dance"],["Sit / rest","sit down and rest"]];
+const memeActions=[["Dab","dab"],["Flex","flex"],["Floss","floss"],["The Robot","do the robot"],["Mic drop","mic drop"],["Finger guns","finger guns"]];
 type Line={who:"you"|"bot";text:string};
 export default function Home(){
  const [endpoint,setEndpoint]=useState(""),[draft,setDraft]=useState(""),[token,setToken]=useState(""),[tokenDraft,setTokenDraft]=useState("");
@@ -15,6 +16,7 @@ export default function Home(){
  <section className="hero"><button className="core" onClick={()=>setMode("active")} aria-label="Wake console"><span>{mode==="active"?"LINKED":mode==="alert"?"ATTENTION":"STANDBY"}</span><b>{mode.toUpperCase()}</b></button><p>Tap core to wake unit</p></section>
  <section className="telemetry"><div><small>MODE</small><b>{endpoint?"LIVE":"DEMO"}</b></div><div><small>LATENCY</small><b>{latency}</b></div><div><small>SERVOS</small><b>4 / 4</b></div></section>
  <section className="panel"><h2>Motor actions</h2><div className="actions">{actions.map(([l,p])=><button key={l} disabled={busy} onClick={()=>void send(p)}><i/>{l}</button>)}</div></section>
+ <section className="panel"><h2>Dance / meme moves</h2><div className="actions">{memeActions.map(([l,p])=><button key={l} disabled={busy} onClick={()=>void send(p)}><i/>{l}</button>)}</div></section>
  <section className="panel"><h2>Comms link</h2><div className="feed">{lines.map((l,i)=><p key={i} className={l.who}><b>{l.who==="you"?"YOU »":"BOT »"}</b> {l.text}</p>)}</div><form onSubmit={submit}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Say something to the robot…" aria-label="Message"/><button disabled={busy}>{busy?"WAIT":"SEND"}</button></form></section>
  <section className="panel"><h2>Link configuration</h2><label>Backend /chat endpoint<input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="https://your-backend.example.com/chat"/></label><label>Bearer token (optional)<input type="password" value={tokenDraft} onChange={e=>setTokenDraft(e.target.value)} placeholder="Stored only in this browser"/></label><button className="outline" onClick={save}>SAVE LINK SETTINGS</button><p className="note">No server keys are stored here. Link settings stay in this browser and are sent only to your endpoint.</p></section></main>
 }

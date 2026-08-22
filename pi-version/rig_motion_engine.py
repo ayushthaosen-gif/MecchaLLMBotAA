@@ -31,6 +31,8 @@ Gesture = List[Keyframe]
 class RigMotionEngine:
     DEFAULT_MAX_SPEED = 220.0
     STEP_INTERVAL = 0.02
+    # See motion_engine.py's DEAD_BAND_DEG — same rationale, ported here.
+    DEAD_BAND_DEG = 1.5
 
     def __init__(self, rig: MeccanoidRig, max_speed_deg_per_sec: float = DEFAULT_MAX_SPEED):
         self.rig = rig
@@ -91,6 +93,14 @@ class RigMotionEngine:
         max_delta = max(
             (abs(target_joints[j] - start_joints[j]) for j in target_joints), default=0
         )
+
+        if max_delta < self.DEAD_BAND_DEG:
+            self.rig.set_joint_angles(dict(target_joints))
+            if self.on_frame:
+                self.on_frame(0.0, dict(target_joints))
+            self._stop_event.wait(max(hold_seconds, 0.05))
+            return
+
         speed_duration = max_delta / self.max_speed if self.max_speed > 0 else 0
         duration = max(speed_duration, hold_seconds, 0.05)
         steps = max(int(duration / self.STEP_INTERVAL), 1)

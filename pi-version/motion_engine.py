@@ -36,6 +36,12 @@ class MotionEngine:
     # How often we send an updated position while interpolating. Lower =
     # smoother motion but more packets on the bus.
     STEP_INTERVAL = 0.02  # seconds
+    # Moves smaller than this snap directly to target instead of
+    # interpolating — a keyframe that's 1-2 degrees off (command noise, a
+    # calibration rounding, back-to-back gestures sharing a near-identical
+    # pose) would otherwise still spend several steps "easing" a move too
+    # small to see, adding bus chatter and a faint jitter for nothing.
+    DEAD_BAND_DEG = 1.5
 
     def __init__(self, bus: ServoBus, max_speed_deg_per_sec: float = DEFAULT_MAX_SPEED):
         self.bus = bus
@@ -109,6 +115,12 @@ class MotionEngine:
             (abs(target_angles[sid] - start_angles[sid]) for sid in target_angles),
             default=0,
         )
+
+        if max_delta < self.DEAD_BAND_DEG:
+            self.bus.set_angles(dict(target_angles))
+            self._stop_event.wait(max(hold_seconds, 0.05))
+            return
+
         speed_duration = max_delta / self.max_speed if self.max_speed > 0 else 0
         duration = max(speed_duration, hold_seconds, 0.05)
 

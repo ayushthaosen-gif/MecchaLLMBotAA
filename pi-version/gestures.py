@@ -66,6 +66,53 @@ GESTURES: Dict[str, Gesture] = {
     "sit": [
         ({0: 170, 1: 20, 2: 170, 3: 20}, 0.6),
     ],
+
+    # --- Dance / meme gestures (same choreography as rig_gestures.py,
+    # re-expressed in this file's 0-3 servo-id mapping) ---------------------
+    "dab": [
+        ({0: 155, 1: 35, 2: 35, 3: 165}, 0.5),
+        ({0: 155, 1: 35, 2: 35, 3: 165}, 0.8),
+        (REST, 0.6),
+    ],
+    "flex": [
+        ({0: 140, 1: 30, 2: 140, 3: 30}, 0.4),
+        ({0: 135, 1: 40, 2: 135, 3: 40}, 0.25),
+        ({0: 140, 1: 30, 2: 140, 3: 30}, 0.5),
+        (REST, 0.5),
+    ],
+    "floss": [
+        ({0: 130, 1: 150, 2: 55, 3: 45}, 0.22),
+        ({0: 55, 1: 45, 2: 130, 3: 150}, 0.22),
+        ({0: 130, 1: 150, 2: 55, 3: 45}, 0.22),
+        ({0: 55, 1: 45, 2: 130, 3: 150}, 0.22),
+        (REST, 0.4),
+    ],
+    "the_robot": [
+        ({0: 140}, 0.15),
+        ({1: 60}, 0.15),
+        ({0: 90}, 0.15),
+        ({1: 90}, 0.15),
+        ({2: 140}, 0.15),
+        ({3: 60}, 0.15),
+        ({2: 90}, 0.15),
+        ({3: 90}, 0.15),
+        ({0: 120, 2: 120}, 0.2),
+        (REST, 0.4),
+    ],
+    "mic_drop": [
+        ({0: 110, 1: 50}, 0.5),
+        ({0: 110, 1: 50}, 0.6),
+        ({0: 30, 1: 170}, 0.35),
+        ({0: 30, 1: 170}, 0.5),
+        (REST, 0.5),
+    ],
+    "finger_guns": [
+        ({0: 100, 1: 170, 2: 100, 3: 170}, 0.35),
+        ({0: 95, 1: 150, 2: 95, 3: 150}, 0.15),
+        ({0: 100, 1: 170, 2: 100, 3: 170}, 0.35),
+        ({0: 95, 1: 150, 2: 95, 3: 150}, 0.15),
+        (REST, 0.5),
+    ],
 }
 
 # Keyword triggers — kept here for standalone use of this module, though
@@ -79,6 +126,12 @@ KEYWORD_TRIGGERS = {
     "point": ["point at", "point over there"],
     "full_dance": ["dance", "boogie", "groove"],
     "sit": ["sit down", "rest", "power down"],
+    "dab": ["dab", "do a dab"],
+    "flex": ["flex", "show your muscles", "flex your arms"],
+    "floss": ["floss", "do the floss", "floss dance"],
+    "the_robot": ["do the robot", "robot dance"],
+    "mic_drop": ["mic drop", "drop the mic"],
+    "finger_guns": ["finger guns", "pew pew"],
 }
 
 

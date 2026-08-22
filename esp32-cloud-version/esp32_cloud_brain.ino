@@ -112,6 +112,55 @@ Keyframe GESTURE_SIT[] = {
   {{170, 20, 170, 20}, 600},
 };
 
+// --- Dance / meme gestures (same choreography as rig_gestures.py/gestures.py) ---
+Keyframe GESTURE_DAB[] = {
+  {{155, 35, 35, 165}, 500},
+  {{155, 35, 35, 165}, 800},
+  {{90, 90, 90, 90}, 600},
+};
+Keyframe GESTURE_FLEX[] = {
+  {{140, 30, 140, 30}, 400},
+  {{135, 40, 135, 40}, 250},
+  {{140, 30, 140, 30}, 500},
+  {{90, 90, 90, 90}, 500},
+};
+Keyframe GESTURE_FLOSS[] = {
+  {{130, 150, 55, 45}, 220},
+  {{55, 45, 130, 150}, 220},
+  {{130, 150, 55, 45}, 220},
+  {{55, 45, 130, 150}, 220},
+  {{90, 90, 90, 90}, 400},
+};
+// Partial-keyframe rig-model version isolates one joint per step; this
+// firmware's Keyframe always specifies all 4 angles, so each step here
+// repeats the previous frame's other joints unchanged to get the same effect.
+Keyframe GESTURE_THE_ROBOT[] = {
+  {{140, 90, 90, 90}, 150},
+  {{140, 60, 90, 90}, 150},
+  {{90, 60, 90, 90}, 150},
+  {{90, 90, 90, 90}, 150},
+  {{90, 90, 140, 90}, 150},
+  {{90, 90, 140, 60}, 150},
+  {{90, 90, 90, 60}, 150},
+  {{90, 90, 90, 90}, 150},
+  {{120, 90, 120, 90}, 200},
+  {{90, 90, 90, 90}, 400},
+};
+Keyframe GESTURE_MIC_DROP[] = {
+  {{110, 50, 90, 90}, 500},
+  {{110, 50, 90, 90}, 600},
+  {{30, 170, 90, 90}, 350},
+  {{30, 170, 90, 90}, 500},
+  {{90, 90, 90, 90}, 500},
+};
+Keyframe GESTURE_FINGER_GUNS[] = {
+  {{100, 170, 100, 170}, 350},
+  {{95, 150, 95, 150}, 150},
+  {{100, 170, 100, 170}, 350},
+  {{95, 150, 95, 150}, 150},
+  {{90, 90, 90, 90}, 500},
+};
+
 volatile int currentAngles[NUM_SERVOS] = {90, 90, 90, 90};
 SemaphoreHandle_t busMutex;
 QueueHandle_t gestureQueue; // holds pointers to a small struct describing which gesture to play
@@ -243,6 +292,18 @@ void motionTask(void* pvParameters) {
         playKeyframeSequence(GESTURE_FULL_DANCE, sizeof(GESTURE_FULL_DANCE) / sizeof(Keyframe));
       } else if (strcmp(req.name, "sit") == 0) {
         playKeyframeSequence(GESTURE_SIT, sizeof(GESTURE_SIT) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "dab") == 0) {
+        playKeyframeSequence(GESTURE_DAB, sizeof(GESTURE_DAB) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "flex") == 0) {
+        playKeyframeSequence(GESTURE_FLEX, sizeof(GESTURE_FLEX) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "floss") == 0) {
+        playKeyframeSequence(GESTURE_FLOSS, sizeof(GESTURE_FLOSS) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "the_robot") == 0) {
+        playKeyframeSequence(GESTURE_THE_ROBOT, sizeof(GESTURE_THE_ROBOT) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "mic_drop") == 0) {
+        playKeyframeSequence(GESTURE_MIC_DROP, sizeof(GESTURE_MIC_DROP) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "finger_guns") == 0) {
+        playKeyframeSequence(GESTURE_FINGER_GUNS, sizeof(GESTURE_FINGER_GUNS) / sizeof(Keyframe));
       }
     }
   }

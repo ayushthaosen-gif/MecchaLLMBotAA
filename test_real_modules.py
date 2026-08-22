@@ -71,6 +71,28 @@ def test_rig_gestures():
         chain = rig_gestures.build_chain(["bow", "wave_both"])
         check("build_chain concatenates keyframes",
               len(chain) == len(rig_gestures.GESTURES["bow"]) + len(rig_gestures.GESTURES["wave_both"]))
+
+        # Dance/meme gestures — matching, and that every joint value in
+        # every keyframe stays within the servos' real 0-180 range.
+        meme_cases = {"do a dab": "dab", "do the floss": "floss", "mic drop": "mic_drop"}
+        for msg, expected in meme_cases.items():
+            got = rig_gestures.match_gesture_from_text(msg)
+            check(f"'{msg}' -> {expected}", got == expected, f"got {got!r}")
+        check("'robot dance' resolves to the_robot, not full_dance",
+              rig_gestures.match_gesture_from_text("let's do a robot dance") == "the_robot")
+
+        for name in ("dab", "flex", "floss", "the_robot", "mic_drop", "finger_guns"):
+            for angles, _hold in rig_gestures.GESTURES[name]:
+                for joint, angle in angles.items():
+                    check(f"{name}: {joint}={angle} within [0, 180]", 0 <= angle <= 180,
+                          f"gesture {name!r} has {joint}={angle}")
+
+        check("'meme routine' matches meme_routine chain",
+              rig_gestures.match_chain_from_text("meme routine") == "meme_routine")
+        meme_chain = rig_gestures.build_chain(rig_gestures.GESTURE_CHAINS["meme_routine"])
+        check("meme_routine chain concatenates dab+flex+finger_guns",
+              len(meme_chain) == sum(len(rig_gestures.GESTURES[g])
+                                      for g in ("dab", "flex", "finger_guns")))
     finally:
         sys.path.remove(PI_VERSION)
         sys.modules.pop("rig_gestures", None)
@@ -85,10 +107,17 @@ def test_flat_gestures():
         cases = {
             "wave with both arms please": "wave_both",
             "welcome here, everyone": None,  # substring false-positive regression
+            "do a dab": "dab",
+            "finger guns": "finger_guns",
         }
         for msg, expected in cases.items():
             got = gestures.match_gesture_from_text(msg)
             check(f"'{msg}' -> {expected}", got == expected, f"got {got!r}")
+        for name in ("dab", "flex", "floss", "the_robot", "mic_drop", "finger_guns"):
+            for angles, _hold in gestures.GESTURES[name]:
+                for servo_id, angle in angles.items():
+                    check(f"{name}: servo {servo_id}={angle} within [0, 180]", 0 <= angle <= 180,
+                          f"gesture {name!r} has servo {servo_id}={angle}")
     finally:
         sys.path.remove(ESP32_CLOUD)
         sys.modules.pop("gestures", None)
@@ -162,6 +191,44 @@ def test_robot_brain_service():
         sys.path.remove(CLOUD_FUNCTION)
         sys.modules.pop("main", None)
         sys.modules.pop("cloud_llm_backends", None)
+
+
+def test_dead_band_smoothing():
+    print("\n=== 3b. pi-version/motion_engine.py: dead-band smoothing (real module) ===")
+    sys.path.insert(0, PI_VERSION)
+    try:
+        import servo_controller as sc
+        import motion_engine as me
+
+        bus = sc.ServoBus(sc.ServoBusConfig(simulate=True, servo_count=4))
+        engine = me.MotionEngine(bus)
+
+        # A move smaller than DEAD_BAND_DEG should snap in one command, not
+        # spend several interpolation steps easing an invisible correction.
+        bus.set_angle(0, 90)
+        before = len(bus._outputs)  # sanity: bus still usable after direct set_angle
+        check("bus usable before dead-band check", before == sc.MAX_CHAIN)
+
+        calls = []
+        original_set_angles = bus.set_angles
+        bus.set_angles = lambda angles: (calls.append(dict(angles)), original_set_angles(angles))[-1]
+        engine._move_to({0: 91}, 0.05)  # 1 degree — below DEAD_BAND_DEG (1.5)
+        check("sub-dead-band move issues exactly one set_angles call",
+              len(calls) == 1, f"got {len(calls)} calls: {calls}")
+        check("sub-dead-band move lands exactly on target",
+              bus.get_angle(0) == 91)
+
+        calls.clear()
+        engine._move_to({0: 150}, 0.05)  # 59 degrees — well above the dead-band
+        check("above-dead-band move issues more than one set_angles call (real interpolation)",
+              len(calls) > 1, f"got {len(calls)} calls")
+        check("above-dead-band move lands exactly on target",
+              bus.get_angle(0) == 150)
+    finally:
+        sys.path.remove(PI_VERSION)
+        sys.modules.pop("servo_controller", None)
+        sys.modules.pop("motion_engine", None)
+        sys.modules.pop("gestures", None)
 
 
 def test_memory_backend_selection():
@@ -321,7 +388,7 @@ def test_servo_protocol():
 
 if __name__ == "__main__":
     tests = [test_rig_gestures, test_flat_gestures, test_robot_brain_service,
-              test_memory_backend_selection, test_servo_protocol]
+              test_dead_band_smoothing, test_memory_backend_selection, test_servo_protocol]
     failed = False
     for t in tests:
         try:

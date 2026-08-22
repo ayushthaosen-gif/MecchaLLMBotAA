@@ -6,6 +6,23 @@ this repo's `main` branch.
 ## [Unreleased]
 
 ### Added
+- 6 new dance/meme gestures — `dab`, `flex`, `floss`, `the_robot`,
+  `mic_drop`, `finger_guns` — plus a `meme_routine` gesture chain
+  (dab+flex+finger_guns), added to both gesture models
+  (`rig_gestures.py`, flat `gestures.py` in both copies), the ESP32-cloud
+  brain's keyword triggers, and the ESP32 firmware's keyframe library
+  (`esp32_cloud_brain.ino`) for real-hardware parity. Exposed in both
+  dashboards (`docs/dashboard.html`, `app/page.tsx`) as a "Dance / Meme
+  Moves" panel. All joint angles verified within the real [0, 180] servo
+  range in `test_real_modules.py`.
+- Movement refinement: a small dead-band (`DEAD_BAND_DEG = 1.5`) in
+  `motion_engine.py`/`rig_motion_engine.py` — a keyframe move smaller
+  than that now snaps directly to target in one command instead of
+  spending several interpolation steps easing a correction nobody could
+  see. This was an explicitly flagged "not yet built" item from the
+  original design conversation.
+
+### Added (protocol port)
 - Ported the real Meccanoid servo bus protocol (from
   `alexfrederiksen/MeccanoidForArduino`) into `servo_controller.py` (both
   copies) and both `.ino` firmware files, replacing the old guessed

@@ -175,6 +175,12 @@ KEYWORD_TRIGGERS = {
     "point": ["point at", "point over there"],
     "full_dance": ["dance", "boogie", "groove"],
     "sit": ["sit down", "rest", "power down"],
+    "dab": ["dab", "do a dab"],
+    "flex": ["flex", "show your muscles", "flex your arms"],
+    "floss": ["floss", "do the floss", "floss dance"],
+    "the_robot": ["do the robot", "robot dance"],
+    "mic_drop": ["mic drop", "drop the mic"],
+    "finger_guns": ["finger guns", "pew pew"],
 }
 
 # Locomotion is a SEPARATE hardware system from the arm servos — the 2

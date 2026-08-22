@@ -160,6 +160,12 @@ GESTURE_TRIGGERS = {
     "point": ["point at", "point over there"],
     "full_dance": ["dance", "boogie", "groove"],
     "sit": ["sit down", "rest", "power down"],
+    "dab": ["dab", "do a dab"],
+    "flex": ["flex", "show your muscles", "flex your arms"],
+    "floss": ["floss", "do the floss", "floss dance"],
+    "the_robot": ["do the robot", "robot dance"],
+    "mic_drop": ["mic drop", "drop the mic"],
+    "finger_guns": ["finger guns", "pew pew"],
 }
 
 LOCOMOTION_TRIGGERS = {
@@ -341,6 +347,25 @@ def test_locomotion_matching():
           match_longest("welcome here, everyone", LOCOMOTION_TRIGGERS) is None)
 
 
+def test_meme_gesture_matching():
+    print("\n=== 2b. Dance/meme gesture keyword matching ===")
+    cases = {
+        "do a dab": "dab",
+        "can you flex your arms": "flex",
+        "do the floss": "floss",
+        "do the robot": "the_robot",
+        "mic drop": "mic_drop",
+        "finger guns": "finger_guns",
+    }
+    for msg, expected in cases.items():
+        got = match_longest(msg, GESTURE_TRIGGERS)
+        check(f"'{msg}' -> {expected}", got == expected, f"got {got!r}")
+    # "robot dance" contains "dance" (full_dance) as a substring but should
+    # resolve to the longer, more specific "the_robot" trigger.
+    check("'robot dance' resolves to the_robot, not full_dance (longest match)",
+          match_longest("let's do a robot dance", GESTURE_TRIGGERS) == "the_robot")
+
+
 def test_smooth_interpolation():
     print("\n=== 4. Smooth servo interpolation ===")
     bus = FakeServoBus()
@@ -418,6 +443,7 @@ if __name__ == "__main__":
     tests = [
         test_hardware_model,
         test_gesture_matching,
+        test_meme_gesture_matching,
         test_locomotion_matching,
         test_smooth_interpolation,
         test_locomotion_kinematics,

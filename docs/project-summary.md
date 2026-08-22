@@ -31,7 +31,22 @@
 - `local_filler_model.py`: stand-in for a real tiny on-device LLM (e.g. the demonstrated 28.9M-param TinyStories model that runs on an ESP32-S3 at ~9 tok/s) — generates instant, non-contextual filler text while the real cloud reply is in flight, to mask network latency. Honest limitation: it can't answer anything, it's not a smaller Claude/Gemini
 
 ## Current gesture set (arms-only, matches confirmed hardware)
-`wave_right`, `wave_both`, `bow`, `shrug`, `point`, `full_dance`, `sit` — all keyword-triggered, longest-match-wins specificity (fixed a bug where "wave" was shadowing "wave with both")
+Core: `wave_right`, `wave_both`, `bow`, `shrug`, `point`, `full_dance`, `sit`
+Dance/meme: `dab`, `flex`, `floss`, `the_robot`, `mic_drop`, `finger_guns`
+Gesture chains (multiple gestures played as one continuous routine):
+`greeting_routine` (bow+wave_both), `showoff_routine` (wave_right+full_dance+bow),
+`goodnight_routine` (wave_right+sit), `meme_routine` (dab+flex+finger_guns)
+
+All keyword-triggered, longest-match-wins specificity (fixed a bug where "wave" was shadowing "wave with both") on word-boundary matches (fixed a separate bug where e.g. "bow" fired inside "rainbow"/"elbow")
+
+## Movement refinement
+`motion_engine.py`/`rig_motion_engine.py` now have a small dead-band
+(`DEAD_BAND_DEG = 1.5`): a keyframe move smaller than that snaps directly
+to the target in one command instead of spending several interpolation
+steps easing a correction nobody could see — this was flagged as a "not
+yet built" refinement in the original design conversation ("small
+dead-band so it doesn't twitch when a target is 1-2° off due to command
+noise") and is now implemented.
 
 Locomotion triggers: `forward`, `backward`, `turn_left`, `turn_right`, `turn_around`
 

@@ -91,6 +91,88 @@ GESTURES: Dict[str, Gesture] = {
         ({"right_shoulder": 170, "right_elbow": 20,
           "left_shoulder": 170, "left_elbow": 20}, 0.6),
     ],
+
+    # --- Dance / meme gestures --------------------------------------------
+
+    # Dab — right arm bent up across the "face" (no head to tuck into, but
+    # the pose reads clearly anyway), left arm extended straight out/down.
+    "dab": [
+        ({"right_shoulder": 155, "right_elbow": 35,
+          "left_shoulder": 35, "left_elbow": 165}, 0.5),
+        ({"right_shoulder": 155, "right_elbow": 35,
+          "left_shoulder": 35, "left_elbow": 165}, 0.8),
+        (REST_POSE, 0.6),
+    ],
+
+    # Flex — double-bicep pose with a little pulse (flex, slight release,
+    # flex again) instead of a single static hold.
+    "flex": [
+        ({"right_shoulder": 140, "right_elbow": 30,
+          "left_shoulder": 140, "left_elbow": 30}, 0.4),
+        ({"right_shoulder": 135, "right_elbow": 40,
+          "left_shoulder": 135, "left_elbow": 40}, 0.25),
+        ({"right_shoulder": 140, "right_elbow": 30,
+          "left_shoulder": 140, "left_elbow": 30}, 0.5),
+        (REST_POSE, 0.5),
+    ],
+
+    # Floss — arms swing opposite front-back on a fast alternating
+    # schedule. No hips to rock, so the approximation leans on the arm
+    # swing alone, at a snappier tempo than full_dance to read as "floss"
+    # rather than a generic dance.
+    "floss": [
+        ({"right_shoulder": 130, "right_elbow": 150,
+          "left_shoulder": 55, "left_elbow": 45}, 0.22),
+        ({"right_shoulder": 55, "right_elbow": 45,
+          "left_shoulder": 130, "left_elbow": 150}, 0.22),
+        ({"right_shoulder": 130, "right_elbow": 150,
+          "left_shoulder": 55, "left_elbow": 45}, 0.22),
+        ({"right_shoulder": 55, "right_elbow": 45,
+          "left_shoulder": 130, "left_elbow": 150}, 0.22),
+        (REST_POSE, 0.4),
+    ],
+
+    # "The Robot" — the one dance move this project can do with a
+    # straight face: isolated, single-joint moves in sequence (rather
+    # than all 4 joints easing together) reads as mechanical/staccato
+    # using the exact same interpolation engine as every other gesture,
+    # no special-casing needed.
+    "the_robot": [
+        ({"right_shoulder": 140}, 0.15),
+        ({"right_elbow": 60}, 0.15),
+        ({"right_shoulder": 90}, 0.15),
+        ({"right_elbow": 90}, 0.15),
+        ({"left_shoulder": 140}, 0.15),
+        ({"left_elbow": 60}, 0.15),
+        ({"left_shoulder": 90}, 0.15),
+        ({"left_elbow": 90}, 0.15),
+        ({"right_shoulder": 120, "left_shoulder": 120}, 0.2),
+        (REST_POSE, 0.4),
+    ],
+
+    # Mic drop — raise to a "speaking into a mic" pose, hold for the
+    # moment, then a fast dramatic drop out and away.
+    "mic_drop": [
+        ({"right_shoulder": 110, "right_elbow": 50}, 0.5),
+        ({"right_shoulder": 110, "right_elbow": 50}, 0.6),
+        ({"right_shoulder": 30, "right_elbow": 170}, 0.35),
+        ({"right_shoulder": 30, "right_elbow": 170}, 0.5),
+        (REST_POSE, 0.5),
+    ],
+
+    # Finger guns — both arms point forward with a quick recoil ("pew
+    # pew"), twice.
+    "finger_guns": [
+        ({"right_shoulder": 100, "right_elbow": 170,
+          "left_shoulder": 100, "left_elbow": 170}, 0.35),
+        ({"right_shoulder": 95, "right_elbow": 150,
+          "left_shoulder": 95, "left_elbow": 150}, 0.15),
+        ({"right_shoulder": 100, "right_elbow": 170,
+          "left_shoulder": 100, "left_elbow": 170}, 0.35),
+        ({"right_shoulder": 95, "right_elbow": 150,
+          "left_shoulder": 95, "left_elbow": 150}, 0.15),
+        (REST_POSE, 0.5),
+    ],
 }
 
 KEYWORD_TRIGGERS = {
@@ -98,6 +180,12 @@ KEYWORD_TRIGGERS = {
     "wave_both": ["wave both", "wave with both", "big wave"],
     "bow": ["bow", "take a bow"],
     "shrug": ["shrug", "i don't know", "dunno"],
+    "dab": ["dab", "do a dab"],
+    "flex": ["flex", "show your muscles", "flex your arms"],
+    "floss": ["floss", "do the floss", "floss dance"],
+    "the_robot": ["do the robot", "robot dance"],
+    "mic_drop": ["mic drop", "drop the mic"],
+    "finger_guns": ["finger guns", "pew pew"],
     "point": ["point at", "point over there"],
     "full_dance": ["dance", "boogie", "groove"],
     "sit": ["sit down", "rest", "power down"],
@@ -129,11 +217,13 @@ GESTURE_CHAINS: Dict[str, List[str]] = {
     "greeting_routine": ["bow", "wave_both"],
     "showoff_routine": ["wave_right", "full_dance", "bow"],
     "goodnight_routine": ["wave_right", "sit"],
+    "meme_routine": ["dab", "flex", "finger_guns"],
 }
 
 CHAIN_TRIGGERS = {
     "greeting_routine": ["say hello properly", "greet everyone", "big greeting"],
     "showoff_routine": ["show off", "do your thing", "impress me"],
+    "meme_routine": ["hit me with the memes", "meme routine", "do a meme"],
     "goodnight_routine": ["say goodnight", "goodnight routine"],
 }
 
