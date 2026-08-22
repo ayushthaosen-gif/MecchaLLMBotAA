@@ -454,8 +454,10 @@ def test_mirror_control_mood_and_locomotion():
               mc.apply_locomotion("forward") is None)
         check("apply_locomotion rejects an invalid action",
               mc.apply_locomotion("sideways") is None)
-        check("LOCOMOTION_ACTIONS is exactly forward/backward/stop",
-              LOCOMOTION_ACTIONS == {"forward", "backward", "stop"})
+        check("apply_locomotion rejects backward in forward-only follow mode",
+              mc.apply_locomotion("backward") is None)
+        check("LOCOMOTION_ACTIONS is exactly forward/stop",
+              LOCOMOTION_ACTIONS == {"forward", "stop"})
 
         # No eyes/drive wired up -> both must no-op cleanly, never raise.
         bare = MirrorController(sc.ServoBus(sc.ServoBusConfig(simulate=True, servo_count=4)))

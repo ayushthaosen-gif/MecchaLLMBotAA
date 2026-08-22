@@ -5,7 +5,7 @@ same /mirror_pose feed, each with its own (looser) rate limit since
 neither is safety-critical the way live arm angles are:
   - apply_mood(): forwards a face-expression tag to the eye LEDs
   - apply_locomotion(): drives the wheels in short, self-bounding pulses
-    for "follow mode" (see docs/index.html's crossed-arms detection) —
+    for forward-only "follow mode" (see docs/index.html's crossed-arms detection) —
     never a continuous/open-ended motor command.
 """
 import math
@@ -18,7 +18,7 @@ JOINT_TO_SERVO = {
     "left_shoulder": 2, "left_elbow": 3,
 }
 REST = {0: 90, 1: 90, 2: 90, 3: 90}
-LOCOMOTION_ACTIONS = {"forward", "backward", "stop"}
+LOCOMOTION_ACTIONS = {"forward", "stop"}
 
 class MirrorController:
     """Rate-, range-, and step-limited live targets with a dead-man reset."""
@@ -47,6 +47,7 @@ class MirrorController:
         self.eyes = eyes    # optional EyeModule — apply_mood() no-ops without one
         self.drive = drive  # optional DriveMotors — apply_locomotion() no-ops without one
         self._lock = threading.Lock()
+        self._side_lock = threading.Lock()
         self._last_update = 0.0
         self._last_targets = dict(REST)
         self._rested = True
@@ -87,12 +88,13 @@ class MirrorController:
         since a stale eye color is harmless)."""
         if not self.eyes or not mood:
             return None
-        now = time.monotonic()
-        if now - self._last_mood_update < self.MOOD_MIN_INTERVAL_S:
-            return None
-        self._last_mood_update = now
-        self.eyes.set_mood(mood)  # eyes.py itself falls back to "neutral" for unknown moods
-        return mood
+        with self._side_lock:
+            now = time.monotonic()
+            if now - self._last_mood_update < self.MOOD_MIN_INTERVAL_S:
+                return None
+            self._last_mood_update = now
+            self.eyes.set_mood(mood)  # eyes.py itself falls back to "neutral" for unknown moods
+            return mood
 
     def apply_locomotion(self, action: Optional[str]) -> Optional[str]:
         """Drives the wheels in a single short, self-bounding pulse for
@@ -102,18 +104,17 @@ class MirrorController:
         than needing a separate watchdog to catch a runaway motor."""
         if not self.drive or action not in LOCOMOTION_ACTIONS:
             return None
-        now = time.monotonic()
-        if action == self._last_locomotion and now - self._last_locomotion_update < self.LOCOMOTION_MIN_INTERVAL_S:
-            return None
-        self._last_locomotion_update = now
-        self._last_locomotion = action
-        if action == "forward":
-            self.drive.forward(speed=self.LOCOMOTION_SPEED, duration_s=self.LOCOMOTION_PULSE_S)
-        elif action == "backward":
-            self.drive.backward(speed=self.LOCOMOTION_SPEED, duration_s=self.LOCOMOTION_PULSE_S)
-        else:
-            self.drive.stop()
-        return action
+        with self._side_lock:
+            now = time.monotonic()
+            if action == self._last_locomotion and now - self._last_locomotion_update < self.LOCOMOTION_MIN_INTERVAL_S:
+                return None
+            self._last_locomotion_update = now
+            self._last_locomotion = action
+            if action == "forward":
+                self.drive.forward(speed=self.LOCOMOTION_SPEED, duration_s=self.LOCOMOTION_PULSE_S)
+            else:
+                self.drive.stop()
+            return action
 
     @property
     def active(self) -> bool:

@@ -351,8 +351,8 @@ matched to how safety-critical it actually is:
   to rest if updates stop for 750ms.
 - **Mood** (`mood`, optional): 0.3s min interval — cosmetic, so a skipped
   update is never an error, just a no-op.
-- **Locomotion** (`locomotion`, optional — `forward`/`backward`/`stop`, only
-  `forward`/`stop` are actually sent right now — see follow mode above):
+- **Locomotion** (`locomotion`, optional — strictly `forward`/`stop` in
+  follow mode; backward commands are rejected by the controller):
   0.5s min interval, each command a short self-bounding wheel pulse (never
   a continuous motor command) at a gentler speed than scripted routines
   use, since this is live teleop, not a scripted gesture.

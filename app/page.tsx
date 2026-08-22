@@ -19,7 +19,8 @@ export default function Home(){
    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({message:text})});const d=await r.json().catch(()=>({}));if(!r.ok||d.error)throw new Error(d.error||`HTTP ${r.status}`);reply=d.reply||"Command accepted."
    const elapsed=Math.round(performance.now()-t);setLatency(`${elapsed}ms`);setLines(v=>[...v,{who:"bot",text:reply}]);void saveEvent(kind,"bot",reply,elapsed);
    pushLog("net",`backend replied in ${elapsed}ms`);
-   if(d.gesture)pushLog("track",`gesture matched: ${d.gesture} — running on arm bus`);
+   const matchedGesture=d.gesture??d.gesture_triggered;
+   if(matchedGesture)pushLog("track",`gesture matched: ${matchedGesture} — running on arm bus`);
    if(d.locomotion)pushLog("track",`locomotion matched: ${d.locomotion} — running on wheel motors`);
    if(d.mood)pushLog("sys",`mood: ${d.mood} — eyes updated`);
    setMode("idle")}catch(e){setMode("alert");const error=`Link error: ${e instanceof Error?e.message:"unknown error"}`;setLines(v=>[...v,{who:"bot",text:error}]);void saveEvent("error","system",error);pushLog("err",error)}finally{setBusy(false)}}
@@ -30,7 +31,7 @@ export default function Home(){
  <section className="telemetry"><div><small>MODE</small><b>{endpoint?"LIVE":"DEMO"}</b></div><div><small>LATENCY</small><b>{latency}</b></div><div><small>SERVOS</small><b>4 / 4</b></div></section>
  <section className="panel"><h2>Motor actions</h2><div className="actions">{actions.map(([l,p])=><button key={l} disabled={busy} onClick={()=>void send(p,"command")}><i/>{l}</button>)}</div></section>
  <section className="panel"><h2>Dance / meme moves</h2><div className="actions">{memeActions.map(([l,p])=><button key={l} disabled={busy} onClick={()=>void send(p,"command")}><i/>{l}</button>)}</div></section>
- <section className="panel mirrorCallout"><h2>Camera mirror</h2><p>Use a phone or laptop camera to generate an on-device arm wireframe and safely mirror four joint angles.</p><a href="/mirror">OPEN POSE MIRROR →</a></section>
+ <section className="panel mirrorCallout"><h2>Camera mirror</h2><p>Use your camera for on-device arm mirroring, expression-linked eye colors, and an experimental forward-only follow mode.</p><a href="/mirror">OPEN POSE MIRROR →</a></section>
  <section className="panel"><h2>Comms link</h2><div className="feed">{lines.map((l,i)=><p key={i} className={l.who}><b>{l.who==="you"?"YOU »":"BOT »"}</b> {l.text}</p>)}</div><form onSubmit={submit}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Say something to the robot…" aria-label="Message"/><button disabled={busy}>{busy?"WAIT":"SEND"}</button></form></section>
  <section className="panel"><h2>System log</h2><div className="terminal">{log.map((l,i)=><div key={i} className="tline"><span className="t-ts">[{l.ts}]</span> <span className={`t-${l.kind}`}>{l.kind.toUpperCase()}</span> :: {l.msg}</div>)}<div className="tline"><span className="term-cursor"/></div></div></section>
  <section className="panel"><h2>Link configuration</h2><label>Backend /chat endpoint<input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="https://your-backend.example.com/chat"/></label><label>Bearer token (optional)<input type="password" value={tokenDraft} onChange={e=>setTokenDraft(e.target.value)} placeholder="Stored only in this browser"/></label><button className="outline" onClick={save}>SAVE LINK SETTINGS</button><p className="note">No server keys are stored here. Link settings stay in this browser and are sent only to your endpoint.</p></section></main>
