@@ -6,7 +6,27 @@ this repo's `main` branch.
 ## [Unreleased]
 
 ### Added
-- `README.md` (this repo's root) and this changelog.
+- Ported the real Meccanoid servo bus protocol (from
+  `alexfrederiksen/MeccanoidForArduino`) into `servo_controller.py` (both
+  copies) and both `.ino` firmware files, replacing the old guessed
+  3-byte XOR-checksum packet: real HEADER+4-slot+checksum frame, 417µs
+  half-duplex bit timing, SERVO_MIN/MAX (0x18-0xE8) angle mapping. This
+  was the explicit "suggested next test" in `docs/project-summary.md`.
+- `test_real_modules.py`: hand-verified checksum/frame regression tests
+  for the new protocol logic.
+- Required-hardware list and source/credit attribution
+  (`alexfrederiksen/MeccanoidForArduino`, `StormingMoose/ESP-Rider_*`,
+  Meccano's own product listing) in the root `README.md`.
+
+### Changed
+- `ServoBusConfig(transport="direct", simulate=False)` now raises
+  `NotImplementedError` instead of silently sending the wrong bytes at
+  real servos — the real protocol's half-duplex single-wire framing
+  can't be reproduced over a normal two-wire pyserial UART. Real hardware
+  must use `transport="esp32"`.
+- `pi-version/pinout.md` and `pi-version/README.md`: corrected wiring
+  docs and caveats now that the protocol is sourced rather than guessed,
+  and that `transport="direct"` isn't a supported real-hardware path.
 
 ## 2026-08-22 — Dashboard, Firestore, Gemini 2.5 integration (`d92e8dd`)
 

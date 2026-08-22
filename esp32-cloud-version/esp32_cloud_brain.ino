@@ -17,9 +17,18 @@
   ones, which is what lets it work behind home WiFi/NAT with no port
   forwarding.
 
-  PACKET FORMAT WARNING — same as the other firmware in this project:
-  Meccano never published the smart-servo protocol; verify the bytes in
-  sendServoPacket() against your own logic-analyzer capture.
+  PROTOCOL: no longer a placeholder. Ported from the community-reverse-
+  engineered "SM protocol" (alexfrederiksen/MeccanoidForArduino,
+  Meccanoid.cpp/.h — see servo_controller.py's module docstring for the
+  full writeup, which this firmware mirrors byte-for-byte and
+  timing-for-timing): single half-duplex wire, up to 4 modules per chain,
+  each bus cycle sends HEADER_BYTE + 4 output bytes + checksum, then
+  reads back one poll byte. Framing per byte: 1 start bit (417us LOW), 8
+  data bits LSB-first (417us each), 2 stop bits (417us HIGH each) — bit-
+  banged with digitalWrite/delayMicroseconds/pulseIn on a single pin,
+  since a normal two-wire UART peripheral can't reproduce a shared
+  half-duplex line. Still worth verifying against your own logic-analyzer
+  capture before fully trusting it on real hardware.
 
   SECURITY NOTE: WIFI_PASSWORD and any cloud auth token live in this
   firmware's flash. Never put your ANTHROPIC_API_KEY here — that stays
@@ -37,13 +46,25 @@ const char* WIFI_PASSWORD = "your-wifi-password";
 const char* CLOUD_BASE_URL = "https://your-region-your-project.cloudfunctions.net";
 // -----------------------
 
-#define SERVO_BUS_TX_PIN 17
-#define SERVO_BUS_RX_PIN 16
-#define SERVO_BUS_BAUD   9600
-#define NUM_SERVOS       4
-#define POLL_INTERVAL_MS 1500
+#define SERVO_BUS_PIN     17   // single half-duplex wire -> level shifter -> Meccanoid bus
+#define NUM_SERVOS        4
+#define MAX_CHAIN         4    // the real bus's hard limit — same constant as servo_controller.py
+#define BIT_DELAY_US      417
+#define POLL_INTERVAL_MS  1500
 
-HardwareSerial ServoBus(2);
+#define HEADER_BYTE  0xFF
+#define NOMOD_BYTE   0xFE
+
+#define SERVO_MIN 0x18   // 24  — byte value at logical angle 0
+#define SERVO_MAX 0xE8   // 232 — byte value at logical angle 180
+
+uint8_t chainOutputs[MAX_CHAIN];
+uint8_t chainPollIndex = 0;
+
+uint8_t angleToByte(int angle) {
+  angle = constrain(angle, 0, 180);
+  return (uint8_t)round(SERVO_MIN + (angle / 180.0) * (SERVO_MAX - SERVO_MIN));
+}
 
 struct Keyframe {
   int angles[NUM_SERVOS];
@@ -100,13 +121,64 @@ struct GestureRequest {
 };
 
 // ---------------------------------------------------------------------------
-// Packet building — mirrors servo_controller.py's placeholder format.
+// Bit-level bus I/O — ported from Chain::sendByte()/receiveByte() in
+// alexfrederiksen/MeccanoidForArduino.
 // ---------------------------------------------------------------------------
-void sendServoPacket(uint8_t servoId, uint8_t angle) {
-  uint8_t payload[3] = { 0xFF, servoId, angle };
-  uint8_t checksum = payload[0] ^ payload[1] ^ payload[2];
-  ServoBus.write(payload, 3);
-  ServoBus.write(checksum);
+void sendByte(uint8_t data) {
+  pinMode(SERVO_BUS_PIN, OUTPUT);
+
+  digitalWrite(SERVO_BUS_PIN, LOW);          // start bit
+  delayMicroseconds(BIT_DELAY_US);
+
+  for (uint8_t mask = 0x01; mask > 0; mask <<= 1) {
+    digitalWrite(SERVO_BUS_PIN, (data & mask) ? HIGH : LOW);
+    delayMicroseconds(BIT_DELAY_US);
+  }
+
+  digitalWrite(SERVO_BUS_PIN, HIGH);         // 2 stop bits
+  delayMicroseconds(BIT_DELAY_US);
+  digitalWrite(SERVO_BUS_PIN, HIGH);
+  delayMicroseconds(BIT_DELAY_US);
+}
+
+uint8_t receiveByte() {
+  uint8_t result = 0;
+  pinMode(SERVO_BUS_PIN, INPUT);
+  delay(1);  // ~1.5ms turnaround in the reference; rounds to the nearest ms here
+
+  for (uint8_t mask = 0x01; mask > 0; mask <<= 1) {
+    if (pulseIn(SERVO_BUS_PIN, HIGH, 2500) > 400)
+      result |= mask;
+  }
+  return result;
+}
+
+// checksum — ported from Chain::calculateCheckSum(). Widened to a 32-bit
+// accumulator before the final byte truncation, matching the reference's
+// `int sum` (only the `& 0xF0` step matters for correctness, since it
+// already collapses the result into a single byte).
+uint8_t calculateChecksum(const uint8_t outputs[MAX_CHAIN], uint8_t pollIndex) {
+  uint32_t sum = 0;
+  for (int i = 0; i < MAX_CHAIN; i++) sum += outputs[i];
+  sum = sum + (sum >> 8);
+  sum = sum + (sum << 4);
+  sum = sum & 0xF0;
+  sum = sum | (pollIndex & 0x0F);
+  return (uint8_t)(sum & 0xFF);
+}
+
+// One full bus cycle: send HEADER + 4 output slots + checksum, then read
+// back one poll byte for the currently-indexed slot, advancing the index.
+// The real bus has no addressed single-servo write, so this always sends
+// every slot's current value, not just whichever one changed.
+void updateChain() {
+  sendByte(HEADER_BYTE);
+  for (int i = 0; i < MAX_CHAIN; i++) sendByte(chainOutputs[i]);
+  sendByte(calculateChecksum(chainOutputs, chainPollIndex));
+
+  receiveByte();  // poll response — not yet wired to a feedback path
+
+  chainPollIndex = (chainPollIndex + 1) % MAX_CHAIN;
 }
 
 float easeInOut(float t) {
@@ -138,8 +210,11 @@ void playKeyframeSequence(Keyframe* seq, int count) {
         for (int i = 0; i < NUM_SERVOS; i++) {
           int frameAngle = startAngles[i] + (int)((seq[k].angles[i] - startAngles[i]) * t);
           currentAngles[i] = frameAngle;
-          sendServoPacket(i, (uint8_t)frameAngle);
+          chainOutputs[i] = angleToByte(frameAngle);
         }
+        // One whole-chain frame per step, not one packet per servo — the
+        // real bus has no addressed single-servo write (see updateChain()).
+        updateChain();
         xSemaphoreGive(busMutex);
       }
       vTaskDelay(pdMS_TO_TICKS(stepIntervalMs));
@@ -248,7 +323,9 @@ bool connectWiFi() {
 
 void setup() {
   Serial.begin(115200);
-  ServoBus.begin(SERVO_BUS_BAUD, SERIAL_8N1, SERVO_BUS_RX_PIN, SERVO_BUS_TX_PIN);
+  pinMode(SERVO_BUS_PIN, OUTPUT);
+  digitalWrite(SERVO_BUS_PIN, HIGH);  // idle-high, matches the bus's stop-bit level
+  for (int i = 0; i < MAX_CHAIN; i++) chainOutputs[i] = angleToByte(90);
 
   connectWiFi();
 

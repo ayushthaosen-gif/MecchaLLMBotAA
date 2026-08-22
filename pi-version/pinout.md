@@ -1,5 +1,17 @@
 # Raspberry Pi Wiring — Meccanoid Cloud-AI Brain
 
+**This wiring is for `transport="direct"`, which `servo_controller.py`
+no longer supports on real hardware** (`simulate=False` now raises
+`NotImplementedError`): the real Meccanoid bus is a single half-duplex
+wire with 417µs bit timing (see that file's docstring), which the Pi's
+two-wire UART peripheral (TXD/RXD, what this page wires up) can't
+reproduce, and CPython can't hold that timing reliably even if it could.
+**Use the Pi+ESP32 split instead** — see `README.md`'s "Split
+architecture" section and `esp32_servo_bridge/esp32_servo_bridge.ino`,
+which bit-bangs the real protocol on a single GPIO pin from a FreeRTOS
+task. The level-shifting, pull-up, and power-isolation concepts below
+still apply to that wiring, just on the ESP32 side instead of the Pi's.
+
 ## Pins you actually need (of the 40-pin header)
 
 ```

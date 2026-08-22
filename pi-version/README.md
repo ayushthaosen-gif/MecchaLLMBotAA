@@ -9,13 +9,23 @@
 
 ## Before running on real hardware
 
-**The servo packet format in `servo_controller.py` is a placeholder, not a
-confirmed protocol.** Meccano never published one. Capture the real bytes
-yourself with a logic analyzer between a stock MeccaBrain and the servo
-chain, then replace `_build_packet()` in `servo_controller.py` to match.
-Until then, leave `simulate=True` — the rest of the stack (threading,
-gestures, Flask routes, Claude calls) works identically against the
-simulator, so you can build and test everything else first.
+**The servo protocol in `servo_controller.py` is no longer a placeholder
+guess** — it's ported from the community-reverse-engineered "SM protocol"
+(`alexfrederiksen/MeccanoidForArduino`), see the module's docstring for
+the full byte/timing breakdown. It's still worth verifying against your
+own logic-analyzer capture before fully trusting it — this project hasn't
+independently confirmed it against real Meccanoid silicon — but it's a
+real, sourced protocol now, not a guess.
+
+One consequence of the real protocol: it's a single half-duplex wire with
+417µs bit timing, which a normal two-wire pyserial UART can't reproduce.
+`transport="direct"` with `simulate=False` now raises `NotImplementedError`
+rather than silently sending the wrong bytes at real servos — use
+`transport="esp32"` for real hardware (see below); its firmware bit-bangs
+the real protocol on a FreeRTOS task, which can actually hold that timing.
+Until you're on real hardware, leave `simulate=True` — the rest of the
+stack (threading, gestures, Flask routes, Claude calls) works identically
+against the simulator, so you can build and test everything else first.
 
 ## Setup
 
@@ -121,18 +131,21 @@ bus = ServoBus(ServoBusConfig(
 ```
 
 Firmware: `esp32_servo_bridge/esp32_servo_bridge.ino` — flash with the
-Arduino IDE (ESP32 board support installed) or `arduino-cli`. Same
-packet-format caveat applies as `servo_controller.py`: verify the actual
-bytes against your own logic-analyzer capture before trusting it on
-real servos.
+Arduino IDE (ESP32 board support installed) or `arduino-cli`. Bit-bangs
+the same real SM protocol as `servo_controller.py` (see that file's
+docstring) on `SERVO_BUS_PIN` (GPIO17 by default). Same caveat applies:
+verify against your own logic-analyzer capture before fully trusting it
+on real servos.
 
 Wiring for this option:
 ```
 Pi USB port  ───── USB cable ─────  ESP32 USB port  (commands + power)
-ESP32 GPIO17 (TX2) ──► level shifter ──► Meccanoid servo bus data in
-ESP32 GPIO16 (RX2) ◄── level shifter ◄── Meccanoid servo bus data out
-ESP32 GND          ──► level shifter GND (shared with servo power bank GND)
+ESP32 GPIO17 (SERVO_BUS_PIN) ◄─► level shifter ◄─► Meccanoid servo bus (single wire, half-duplex)
+ESP32 GND                    ──► level shifter GND (shared with servo power bank GND)
 ```
+One wire, not a TX/RX pair — the real protocol is half-duplex on a single
+line (see `servo_controller.py`'s docstring), which is why the firmware
+bit-bangs `SERVO_BUS_PIN` directly instead of using a UART peripheral.
 This replaces the Pi-GPIO wiring in `pinout.md` — the Pi no longer
 touches the servo bus directly at all in this mode; its GPIO header is
 free for a future camera or sensor instead.

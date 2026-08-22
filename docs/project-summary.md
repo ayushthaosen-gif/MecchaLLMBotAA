@@ -51,7 +51,8 @@ Locomotion triggers: `forward`, `backward`, `turn_left`, `turn_right`, `turn_aro
 - BOM/cost calculator built for robu.in (India) parts — logic analyzer originally listed as required is now understood to be unnecessary given the official protocol docs + existing libraries above
 
 ## Suggested simulation tests to run next
-1. Port `alexfrederiksen/MeccanoidForArduino`'s actual protocol logic into the Python simulation layer (replace the old guessed byte-packet code)
+1. ~~Port `alexfrederiksen/MeccanoidForArduino`'s actual protocol logic into the Python simulation layer (replace the old guessed byte-packet code)~~ — done, see CHANGELOG.md. Ported into `servo_controller.py` (both copies) and both `.ino` firmware files: real HEADER+4-slot+checksum frame, 417µs half-duplex bit timing, SERVO_MIN/MAX angle mapping. `transport="direct"` real hardware I/O is intentionally left unimplemented (raises clearly) since a two-wire UART can't reproduce the real single-wire half-duplex bus — `transport="esp32"` is the only supported real-hardware path now.
 2. End-to-end test combining the Pi version's Ollama backend with the ESP32-cloud version's non-blocking queue pattern
 3. Load test: many rapid dashboard messages in sequence, confirm queue ordering and no dropped gestures
 4. Fault injection: simulated cloud/WiFi timeout, confirm local filler + graceful degradation
+5. New: extend the ESP32 bridge firmware to drive rig.py's real 2-independent-chain topology (right_arm/left_arm), not just the flat single-chain compatibility model

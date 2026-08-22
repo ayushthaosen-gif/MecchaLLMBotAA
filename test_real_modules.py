@@ -13,6 +13,13 @@ Covers:
      client (no real network/API calls, no API key needed) — this
      mirrors simulate_full_run.py's approach. Skipped if `requests`
      isn't installed, since main.py imports it unconditionally.
+  4. cloud_function/main.py memory backend selection (default vs Firestore,
+     the latter against a fake google.cloud.firestore module)
+  5. pi-version/servo_controller.py's real SM-protocol frame/checksum
+     logic (ported from alexfrederiksen/MeccanoidForArduino) — hand-
+     verified frame bytes for a known angle/output-array input, so a
+     future edit that silently breaks the checksum math or angle mapping
+     gets caught even though nothing "crashes."
 
 Run with:
     python3 test_real_modules.py
@@ -263,9 +270,58 @@ def _build_fake_firestore_module():
     return mod
 
 
+def test_servo_protocol():
+    print("\n=== 5. pi-version/servo_controller.py: real SM protocol (real module) ===")
+    sys.path.insert(0, PI_VERSION)
+    try:
+        import servo_controller as sc  # noqa: real import
+
+        # Angle <-> byte mapping (SERVO_MIN=0x18, SERVO_MAX=0xE8).
+        check("_angle_to_byte(0) == SERVO_MIN", sc._angle_to_byte(0) == sc.SERVO_MIN)
+        check("_angle_to_byte(180) == SERVO_MAX", sc._angle_to_byte(180) == sc.SERVO_MAX)
+        check("_angle_to_byte(90) == 0x80 (mid-travel)", sc._angle_to_byte(90) == 0x80)
+        check("_byte_to_angle is the inverse of _angle_to_byte",
+              sc._byte_to_angle(sc._angle_to_byte(120)) == 120)
+
+        # Checksum — hand-verified: outputs all 0x80 (angle 90 on all 4
+        # slots), poll_index 0 -> 0x20; poll_index 1 -> 0x21 (only the low
+        # nibble changes). Worked out by hand from Chain::calculateCheckSum:
+        # sum=0x200; +=(sum>>8)=0x202; +=(sum<<4)=0x202+0x2020=0x2222;
+        # &0xF0=0x20; |poll_index.
+        outputs_all_90 = [0x80, 0x80, 0x80, 0x80]
+        check("_checksum(all-90 outputs, poll=0) == 0x20",
+              sc._checksum(outputs_all_90, 0) == 0x20,
+              f"got 0x{sc._checksum(outputs_all_90, 0):02X}")
+        check("_checksum(all-90 outputs, poll=1) == 0x21",
+              sc._checksum(outputs_all_90, 1) == 0x21,
+              f"got 0x{sc._checksum(outputs_all_90, 1):02X}")
+
+        # Full frame via the real ServoBus, in simulation.
+        bus = sc.ServoBus(sc.ServoBusConfig(simulate=True, servo_count=4))
+        bus.set_angle(0, 90)
+        frame = bus._build_frame()
+        check("frame starts with HEADER_BYTE", frame[0] == sc.HEADER_BYTE)
+        check("frame is 6 bytes (header + 4 outputs + checksum)", len(frame) == 6)
+        check("frame's checksum matches _checksum() on current outputs",
+              frame[5] == sc._checksum(bus._outputs, bus._poll_index),
+              f"frame={frame.hex()}")
+
+        # Real transport='direct' + simulate=False must fail loudly, not
+        # silently write wrong bytes at real servos over pyserial.
+        raised = False
+        try:
+            sc.ServoBus(sc.ServoBusConfig(simulate=False, transport="direct"))
+        except NotImplementedError:
+            raised = True
+        check("real transport='direct' raises NotImplementedError", raised)
+    finally:
+        sys.path.remove(PI_VERSION)
+        sys.modules.pop("servo_controller", None)
+
+
 if __name__ == "__main__":
     tests = [test_rig_gestures, test_flat_gestures, test_robot_brain_service,
-              test_memory_backend_selection]
+              test_memory_backend_selection, test_servo_protocol]
     failed = False
     for t in tests:
         try:
