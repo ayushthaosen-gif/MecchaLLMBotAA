@@ -48,18 +48,18 @@ MOOD_COLORS = {
 # The body engine owns timing; a real LED transport can apply the same cue
 # immediately when the matching gesture is queued.
 GESTURE_EYE_CUES = {
-    "dab": ((7, 7, 7), 0),
-    "flex": ((6, 5, 0), 1),
-    "floss": ((6, 0, 5), 0),
-    "the_robot": ((0, 6, 6), 0),
-    "mic_drop": ((7, 7, 7), 0),
-    "finger_guns": ((0, 6, 6), 0),
-    "aura_farm": ((5, 0, 7), 6),
-    "six_seven": ((0, 7, 7), 1),
-    "npc_mode": ((0, 7, 0), 0),
-    "facepalm": ((7, 0, 0), 2),
-    "success_pump": ((7, 6, 0), 0),
-    "side_eye": ((6, 2, 0), 4),
+    "dab": ((7, 7, 7), 0, 1.5),
+    "flex": ((6, 5, 0), 1, 1.8),
+    "floss": ((6, 0, 5), 0, 2.0),
+    "the_robot": ((0, 6, 6), 0, 2.0),
+    "mic_drop": ((7, 7, 7), 0, 1.7),
+    "finger_guns": ((0, 6, 6), 0, 1.4),
+    "aura_farm": ((5, 0, 7), 6, 2.0),
+    "six_seven": ((0, 7, 7), 1, 1.5),
+    "npc_mode": ((0, 7, 0), 0, 1.6),
+    "facepalm": ((7, 0, 0), 2, 1.7),
+    "success_pump": ((7, 6, 0), 0, 1.6),
+    "side_eye": ((6, 2, 0), 4, 1.7),
 }
 
 # fade speed: 0 = instant, 7 = ~4 second transition (per real hardware)
@@ -76,6 +76,7 @@ class EyeModule:
         self.current_color: Tuple[int, int, int] = (0, 0, 0)
         self.history = []
         self._t0 = time.perf_counter()
+        self._gesture_cue_until = 0.0
 
     def set_color(self, r: int, g: int, b: int, fade: int = FADE_INSTANT):
         r, g, b, fade = (max(0, min(7, v)) for v in (r, g, b, fade))
@@ -85,12 +86,19 @@ class EyeModule:
         if self.simulate:
             print(f"[SIM/eyes] t={elapsed:.3f}s color=({r},{g},{b}) fade={fade}")
 
+    def _cue_active(self) -> bool:
+        return time.perf_counter() < self._gesture_cue_until
+
     def set_status(self, status: str, fade: int = FADE_INSTANT):
         if status not in STATUS_COLORS:
             raise ValueError(f"unknown status {status!r} — use one of {list(STATUS_COLORS)}")
+        if self._cue_active() and status != "error":
+            return
         self.set_color(*STATUS_COLORS[status], fade=fade)
 
     def set_mood(self, mood: str, fade: int = FADE_SLOW):
+        if self._cue_active():
+            return
         if mood not in MOOD_COLORS:
             mood = "neutral"
         self.set_color(*MOOD_COLORS[mood], fade=fade)
@@ -99,8 +107,9 @@ class EyeModule:
         cue = GESTURE_EYE_CUES.get(gesture)
         if cue is None:
             return None
-        color, fade = cue
+        color, fade, lease_s = cue
         self.set_color(*color, fade=fade)
+        self._gesture_cue_until = time.perf_counter() + lease_s
         return gesture
 
     def blink(self, color: Tuple[int, int, int], times: int = 2, on_s: float = 0.15, off_s: float = 0.1):

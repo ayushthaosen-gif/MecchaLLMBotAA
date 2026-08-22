@@ -334,6 +334,8 @@ class RobotBrainService:
         try:
             reply_text = self._call_llm(system_prompt, message)  # slow — network/model call
         except Exception as exc:
+            if self.eyes:
+                self.eyes.set_status("error")
             # Mirrors brain.py's error handling: don't leave the robot
             # having moved/turned but never having "spoken" — surface a
             # clear error instead of an unhandled 500 with no reply_queue

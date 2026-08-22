@@ -291,3 +291,27 @@ based on published community work, credited here per their use:
   wiring, and backend configuration for each architecture
 - `pi-version/servo_controller.py`'s module docstring — the full
   byte-level/timing writeup of the real servo protocol
+
+## Camera pose mirror
+
+The dashboard's /mirror page uses a phone or laptop front camera to draw a
+MediaPipe pose wireframe and send only four arm-joint angles to the Raspberry
+Pi architecture. Camera frames stay in the browser.
+
+On the Pi, configure ENABLE_MIRROR_CONTROL=1, a long random DASHBOARD_TOKEN,
+and MIRROR_ALLOWED_ORIGIN set to the dashboard's HTTPS origin. Enter the Pi's
+HTTPS /mirror_pose URL and the same token on the mirror page.
+
+The controller is limited to 20 updates per second, clamps targets to 15-165
+degrees, limits each update to 12 degrees, rejects non-finite values, prevents
+scripted gestures and live tracking from fighting over the arm bus, and
+returns all joints to rest if updates stop for 750 ms. Test with simulated
+servos before enabling real hardware.
+
+This mirrors shoulders and elbows, not fingers: the robot has no finger
+motors. It intentionally does not control the wheels or follow a person. Live
+pose streaming is currently Pi-only because the cloud ESP32 polling loop and
+single-chain firmware are not suitable for safe real-time control. Eye cues
+are synchronized in the cloud logic, but physical eye output still requires
+the separate eye-module transport and the documented two-arm-chain firmware
+work.

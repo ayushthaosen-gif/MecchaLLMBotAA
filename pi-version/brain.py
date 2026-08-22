@@ -146,6 +146,8 @@ def chat():
     # Fire a physical gesture in the background — non-blocking, so it plays
     # while we wait on the Claude API call below.
     gesture = match_gesture_from_text(message)
+    if gesture and mirror and mirror.active:
+        gesture = None  # live pose control owns the arm bus until dead-man rest
     if gesture:
         motion.play(gesture)
 
@@ -192,8 +194,12 @@ def mirror_pose():
         return ("", 204)
     if not mirror:
         return jsonify({"error": "mirror control is disabled"}), 503
-    if DASHBOARD_TOKEN and request.headers.get("Authorization", "") != f"Bearer {DASHBOARD_TOKEN}":
+    if not DASHBOARD_TOKEN:
+        return jsonify({"error": "DASHBOARD_TOKEN is required for mirror control"}), 503
+    if request.headers.get("Authorization", "") != f"Bearer {DASHBOARD_TOKEN}":
         return jsonify({"error": "unauthorized"}), 401
+    if motion.is_busy:
+        return jsonify({"error": "gesture playback currently owns the arm bus"}), 409
     body = request.get_json(silent=True) or {}
     try:
         applied = mirror.apply(body.get("joints") or {})

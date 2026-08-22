@@ -1,4 +1,5 @@
 """Safe live pose mirroring for the four-arm-servo Personal Robot 2.0."""
+import math
 import threading
 import time
 from typing import Dict, Mapping
@@ -37,7 +38,7 @@ class MirrorController:
                 raise ValueError("all four named arm joints are required")
             for name, servo_id in JOINT_TO_SERVO.items():
                 value = joints[name]
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError(f"{name} must be numeric")
                 target = max(self.MIN_ANGLE, min(self.MAX_ANGLE, round(value)))
                 previous = self._last_targets[servo_id]
@@ -48,6 +49,11 @@ class MirrorController:
             self._last_update = now
             self._rested = False
             return dict(requested)
+
+    @property
+    def active(self) -> bool:
+        with self._lock:
+            return not self._rested
 
     def _watchdog_loop(self):
         while not self._closed.wait(0.1):
@@ -60,3 +66,8 @@ class MirrorController:
     def close(self):
         self._closed.set()
         self._watchdog.join(timeout=1)
+        with self._lock:
+            if not self._rested:
+                self.bus.set_angles(REST)
+                self._last_targets = dict(REST)
+                self._rested = True
