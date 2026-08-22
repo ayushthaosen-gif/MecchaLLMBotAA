@@ -76,3 +76,18 @@ decisions, the simulated ESP32 poll loop picking each up, and the
 resulting servo angle history — same data used to check that gestures
 land in the right time window relative to the message that triggered
 them.
+
+
+## Production control-plane configuration
+
+Set these environment variables on the cloud function:
+
+- `STATE_BACKEND=firestore` — required for durable, cross-instance queues and memory.
+- `ROBOT_API_TOKEN=<long-random-secret>` — shared Bearer token for dashboard and ESP32 requests.
+- `ROBOT_ID=meccanoid-1` — default robot identifier; clients may explicitly send the same ID.
+
+Copy the same robot ID and token into `esp32_cloud_brain.ino`. The firmware polls
+both `/next_motion` and `/next_locomotion`, and acknowledges each command only
+after it finishes. Verify the six H-bridge pin constants against your motor
+driver before applying motor power; the included values are wiring defaults,
+not a substitute for checking the actual board.
