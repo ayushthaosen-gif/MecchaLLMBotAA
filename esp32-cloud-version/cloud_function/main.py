@@ -13,18 +13,17 @@ cloud_llm_backends.py), keeps conversation memory, does the weather
 intercept, and decides which gesture to fire. The ESP32 never talks to
 the cloud LLM directly — it only:
   1. POSTs the dashboard's message here (/chat)
-  2. Polls here for the next gesture command (/next_command)
-  3. ACKs once it's finished playing a gesture (/ack)
+  2. Polls the robot-scoped motion and locomotion queues
+  3. ACKs a command only after the hardware action completes
 
 This pull model (ESP32 polls, rather than the cloud pushing to the
 ESP32) is deliberate: the ESP32 sits behind home WiFi/NAT with no public
 IP, so nothing can reach it directly. Polling avoids needing port
 forwarding or a persistent inbound connection.
 
-Persistent memory: this file uses an in-memory dict for simplicity/local
-testing (see simulate_full_run.py). In real deployment, swap
-`MemoryStore` for actual Firestore or Supabase calls — the interface is
-kept intentionally small so that's a one-class swap, not a rewrite.
+Persistent state is robot-scoped. Set STATE_BACKEND=firestore in deployed
+environments so memory and commands survive cold starts and are shared across
+instances; the default in-memory backend is intended only for local tests.
 """
 
 import os
@@ -46,9 +45,7 @@ DEFAULT_ROBOT_ID = os.environ.get("ROBOT_ID", "meccanoid-1")
 
 
 # ---------------------------------------------------------------------------
-# Memory — swap this class's internals for Firestore/Supabase in production.
-# The rest of this file only calls append() / recent_text(), so that's the
-# only class that needs to change.
+# State storage is implemented in state_backend.py.
 # ---------------------------------------------------------------------------
 
 class SimpleQueue:
@@ -241,8 +238,7 @@ class RobotBrainService:
 
 # ---------------------------------------------------------------------------
 # functions_framework entry points — this is what Firebase/Cloud
-# Functions/Cloud Run actually invoke. A single shared service instance
-# per deployed instance is fine here since each Meccanoid is one robot.
+# Functions/Cloud Run invoke. Services are robot-scoped and share a backend.
 # ---------------------------------------------------------------------------
 
 try:
