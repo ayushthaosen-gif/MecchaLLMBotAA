@@ -279,7 +279,7 @@ void pollQueue(const char* endpoint, const char* valueKey, const char* kind) {
 void pollCloudForCommand() {
   if (commandInFlight) return;
   pollQueue("/next_motion", "gesture", "motion");
-  pollQueue("/next_locomotion", "locomotion", "locomotion");
+  if (!commandInFlight) pollQueue("/next_locomotion", "locomotion", "locomotion");
 }
 
 void setup() {
