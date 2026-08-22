@@ -193,7 +193,11 @@ backend — pick whichever fits how you want to host it:
   dependencies. Open it directly, or host it anywhere that serves static
   files (Firebase Hosting, GitHub Pages, etc. — see
   `esp32-cloud-version/README.md`). Link settings persist in
-  `localStorage`.
+  `localStorage`. Full feature parity with `app/`: all 19 gesture/meme
+  buttons, and its own vanilla-JS port of the camera pose mirror
+  (on-device tracking, live HUD, joint-angle chips) that talks to the
+  same `/mirror_pose` endpoint — no React/Next.js needed to get the
+  camera feature.
 
   **GitHub Pages setup** (no local server involved): repo → Settings →
   Pages → Source: "Deploy from a branch" → Branch: `main`, folder:

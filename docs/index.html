@@ -189,6 +189,63 @@
   @media (prefers-reduced-motion: reduce){
     body.state-active .core-ring .seg{ animation:none; }
   }
+
+  /* ---------- camera mirror + HUD ---------- */
+  .camera-wrap{
+    position:relative; aspect-ratio:4/3; background:#0a0c0e;
+    border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:10px;
+  }
+  .camera-wrap video, .camera-wrap canvas{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform:scaleX(-1);
+  }
+  .cam-status{
+    position:absolute; left:9px; bottom:9px; z-index:3;
+    background:#101316cc; border:1px solid var(--line); border-radius:4px;
+    padding:5px 8px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--cyan);
+  }
+  .camera-wrap::after{
+    content:''; position:absolute; inset:0; pointer-events:none; z-index:2;
+    background:repeating-linear-gradient(0deg, #ffffff00 0 2px, #4fd8e00a 2px 3px);
+  }
+  .hud-corners{ position:absolute; inset:8px; pointer-events:none; z-index:2; }
+  .hud-corners i{ position:absolute; width:14px; height:14px; border-color:var(--cyan); opacity:.75; }
+  .hud-corners i:nth-child(1){ top:0; left:0; border-top:2px solid; border-left:2px solid; }
+  .hud-corners i:nth-child(2){ top:0; right:0; border-top:2px solid; border-right:2px solid; }
+  .hud-corners i:nth-child(3){ bottom:0; left:0; border-bottom:2px solid; border-left:2px solid; }
+  .hud-corners i:nth-child(4){ bottom:0; right:0; border-bottom:2px solid; border-right:2px solid; }
+  .hud-readout{
+    position:absolute; top:8px; right:8px; z-index:3;
+    display:grid; grid-template-columns:repeat(2,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:6px; overflow:hidden;
+    box-shadow:0 0 16px #0009;
+  }
+  .hud-readout div{ background:#101316dd; padding:4px 8px; min-width:58px; }
+  .hud-readout .k{ display:block; font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:.1em; color:var(--dim); }
+  .hud-readout b{ font-family:'JetBrains Mono',monospace; font-size:11px; }
+  .joint-chip{
+    position:absolute; z-index:3; transform:translate(12px,-50%);
+    display:flex; flex-direction:column; pointer-events:none;
+    background:#101316d9; border:1px solid #4fd8e060; border-radius:4px; padding:2px 6px;
+    box-shadow:0 0 9px #4fd8e025;
+  }
+  .jc-label{ font-family:'JetBrains Mono',monospace; font-size:7px; letter-spacing:.08em; color:var(--dim); }
+  .jc-angle{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; color:var(--cyan); }
+  .angle-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
+  .angle-grid div{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:7px; text-align:center; }
+  .angle-grid .k{ display:block; font-family:'JetBrains Mono',monospace; font-size:7px; letter-spacing:.08em; color:var(--dim); }
+  .angle-grid b{ font-family:'JetBrains Mono',monospace; font-size:14px; color:var(--cyan); }
+  .ok{ color:var(--cyan) !important; text-shadow:0 0 6px #4fd8e070; }
+  .warn{ color:var(--amber) !important; }
+  .dim-txt{ color:var(--dim) !important; }
+  @media (prefers-reduced-motion: no-preference){
+    .camera-wrap::before{
+      content:''; position:absolute; left:0; right:0; height:2px; z-index:2; pointer-events:none;
+      background:linear-gradient(90deg,#4fd8e000,#4fd8e0a0,#4fd8e000);
+      animation:mirror-scan 3.2s linear infinite;
+    }
+  }
+  @keyframes mirror-scan{ 0%{ top:0; } 100%{ top:100%; } }
 </style>
 </head>
 <body class="state-idle">
@@ -251,6 +308,49 @@
       <button class="act-btn" data-action="the_robot" data-phrase="do the robot"><span class="dot"></span>The Robot</button>
       <button class="act-btn" data-action="mic_drop" data-phrase="mic drop"><span class="dot"></span>Mic drop</button>
       <button class="act-btn" data-action="finger_guns" data-phrase="finger guns"><span class="dot"></span>Finger guns</button>
+      <button class="act-btn" data-action="aura_farm" data-phrase="aura farm"><span class="dot"></span>Aura farm</button>
+      <button class="act-btn" data-action="six_seven" data-phrase="six seven gesture"><span class="dot"></span>Six seven</button>
+      <button class="act-btn" data-action="npc_mode" data-phrase="npc mode"><span class="dot"></span>NPC mode</button>
+      <button class="act-btn" data-action="facepalm" data-phrase="facepalm"><span class="dot"></span>Facepalm</button>
+      <button class="act-btn" data-action="success_pump" data-phrase="victory pump"><span class="dot"></span>Big win</button>
+      <button class="act-btn" data-action="side_eye" data-phrase="side eye"><span class="dot"></span>Side eye</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Camera Mirror</div>
+    <div class="cfg-note" style="margin-bottom:2px;">
+      Your camera is processed on this device. Only four joint angles are transmitted — video never goes to the robot or cloud.
+    </div>
+    <div class="camera-wrap" id="cameraWrap">
+      <video id="mirrorVideo" playsinline muted></video>
+      <canvas id="mirrorCanvas"></canvas>
+      <div class="hud-corners"><i></i><i></i><i></i><i></i></div>
+      <div class="hud-readout">
+        <div><span class="k">FPS</span><b id="hudFps">—</b></div>
+        <div><span class="k">LATENCY</span><b id="hudLatency">—</b></div>
+        <div><span class="k">LOCK</span><b id="hudLock" class="warn">SEARCHING</b></div>
+        <div><span class="k">UPLINK</span><b id="hudUplink" class="dim-txt">OFF</b></div>
+      </div>
+      <div class="joint-chip" id="chipRS" style="display:none"><span class="jc-label">R-SHOULDER</span><span class="jc-angle">—</span></div>
+      <div class="joint-chip" id="chipRE" style="display:none"><span class="jc-label">R-ELBOW</span><span class="jc-angle">—</span></div>
+      <div class="joint-chip" id="chipLS" style="display:none"><span class="jc-label">L-SHOULDER</span><span class="jc-angle">—</span></div>
+      <div class="joint-chip" id="chipLE" style="display:none"><span class="jc-label">L-ELBOW</span><span class="jc-angle">—</span></div>
+      <span class="cam-status" id="camStatusText">Camera stopped</span>
+    </div>
+    <div class="angle-grid">
+      <div><span class="k">R-SHOULDER</span><b id="gridRS">—</b></div>
+      <div><span class="k">R-ELBOW</span><b id="gridRE">—</b></div>
+      <div><span class="k">L-SHOULDER</span><b id="gridLS">—</b></div>
+      <div><span class="k">L-ELBOW</span><b id="gridLE">—</b></div>
+    </div>
+    <button class="cfg-save" id="mirrorToggle" style="margin-top:10px;">START CAMERA</button>
+    <div class="cfg-row" style="margin-top:12px;">
+      <label>Mirror endpoint (optional — leave blank for wireframe-only)</label>
+      <input id="mirrorEndpoint" type="text" placeholder="https://your-robot.example.com/mirror_pose" />
+    </div>
+    <div class="cfg-note">
+      On the Pi set <code>ENABLE_MIRROR_CONTROL=1</code>, <code>DASHBOARD_TOKEN</code>, and <code>MIRROR_ALLOWED_ORIGIN</code>. Uses the same Bearer token as Link Configuration below. A public HTTPS page cannot call an insecure HTTP robot endpoint — use HTTPS or run this page locally.
     </div>
   </div>
 
@@ -446,6 +546,186 @@
   document.getElementById('msgInput').addEventListener('keydown', e => {
     if(e.key === 'Enter') sendMessage();
   });
+})();
+</script>
+
+<!--
+  Camera mirror — vanilla-JS port of app/mirror/page.tsx's on-device pose
+  tracking + HUD, so this no-build-step static page has the same feature
+  the Next.js dashboard does, not just the chat/gesture buttons. Uses the
+  same @mediapipe/tasks-vision CDN build the React version loads, and the
+  same wire contract as mirror_control.py: POST {joints:{right_shoulder,
+  right_elbow,left_shoulder,left_elbow}} to the /mirror_pose endpoint.
+-->
+<script type="module">
+import { DrawingUtils, FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/vision_bundle.mjs";
+
+(function(){
+  const clamp = (v, a=15, b=165) => Math.max(a, Math.min(b, v));
+  function angle(a, b, c){
+    const u = {x:a.x-b.x, y:a.y-b.y}, v = {x:c.x-b.x, y:c.y-b.y};
+    const d = Math.hypot(u.x,u.y) * Math.hypot(v.x,v.y);
+    return d ? Math.acos(clamp((u.x*v.x+u.y*v.y)/d, -1, 1)) * 180/Math.PI : 90;
+  }
+  function side(l, shoulder, elbow, wrist, hip){
+    const elevation = angle(l[hip], l[shoulder], l[elbow]);
+    return { shoulder: clamp(30 + elevation*2/3), elbow: clamp(angle(l[shoulder], l[elbow], l[wrist])) };
+  }
+
+  const video = document.getElementById('mirrorVideo');
+  const canvas = document.getElementById('mirrorCanvas');
+  const wrap = document.getElementById('cameraWrap');
+  const toggleBtn = document.getElementById('mirrorToggle');
+  const endpointInput = document.getElementById('mirrorEndpoint');
+  const camStatusText = document.getElementById('camStatusText');
+  const hudFps = document.getElementById('hudFps');
+  const hudLatency = document.getElementById('hudLatency');
+  const hudLock = document.getElementById('hudLock');
+  const hudUplink = document.getElementById('hudUplink');
+  const chips = {
+    right_shoulder: { el: document.getElementById('chipRS'), grid: document.getElementById('gridRS') },
+    right_elbow:    { el: document.getElementById('chipRE'), grid: document.getElementById('gridRE') },
+    left_shoulder:  { el: document.getElementById('chipLS'), grid: document.getElementById('gridLS') },
+    left_elbow:     { el: document.getElementById('chipLE'), grid: document.getElementById('gridLE') },
+  };
+  // Landmark index each joint's chip is pinned to (see side() above).
+  const JOINT_LANDMARK = { right_shoulder: 11, right_elbow: 13, left_shoulder: 12, left_elbow: 14 };
+
+  const chatEndpoint = localStorage.getItem('meccanoid.endpoint') || '';
+  endpointInput.value = localStorage.getItem('meccanoid.mirrorEndpoint')
+    || chatEndpoint.replace(/\/chat\/?$/, '/mirror_pose');
+  endpointInput.addEventListener('change', () => {
+    localStorage.setItem('meccanoid.mirrorEndpoint', endpointInput.value.trim());
+  });
+
+  let running = false, raf = 0, tracker = null, stream = null;
+  let lastSent = 0, sending = false, smoothed = null;
+  let fps = 0, lastFrame = performance.now();
+
+  async function start(){
+    try{
+      toggleBtn.disabled = true;
+      camStatusText.textContent = 'Loading on-device pose model…';
+      const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm');
+      tracker ??= await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate: 'GPU' },
+        runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: .6, minTrackingConfidence: .6,
+      });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 } }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      running = true;
+      toggleBtn.textContent = 'STOP MIRROR';
+      camStatusText.textContent = 'Tracking locally';
+      lastFrame = performance.now();
+      loop();
+    }catch(e){
+      stop(false);
+      camStatusText.textContent = e instanceof Error ? e.message : 'Unable to start camera';
+    }finally{
+      toggleBtn.disabled = false;
+    }
+  }
+
+  function stop(report = true){
+    cancelAnimationFrame(raf);
+    if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    running = false;
+    toggleBtn.textContent = 'START CAMERA';
+    hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
+    hudUplink.textContent = 'OFF'; hudUplink.className = 'dim-txt';
+    for(const k in chips) chips[k].el.style.display = 'none';
+    if(report) camStatusText.textContent = 'Camera stopped — robot auto-rests within 750 ms.';
+  }
+
+  function drawJointMarker(ctx, x, y){
+    ctx.save();
+    ctx.shadowColor = '#4fd8e0'; ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#4fd8e0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-14,y); ctx.lineTo(x-5,y); ctx.moveTo(x+5,y); ctx.lineTo(x+14,y);
+    ctx.moveTo(x,y-14); ctx.lineTo(x,y-5); ctx.moveTo(x,y+5); ctx.lineTo(x,y+14);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function loop(){
+    if(!running) return;
+    if(!video || !canvas || !tracker || video.readyState < 2){ raf = requestAnimationFrame(loop); return; }
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const now = performance.now();
+    const dt = now - lastFrame; lastFrame = now;
+    if(dt > 0) fps = fps ? fps*.9 + (1000/dt)*.1 : 1000/dt;
+
+    const t0 = performance.now();
+    const result = tracker.detectForVideo(video, now);
+    const latencyMs = performance.now() - t0;
+
+    const trackedOk = result.landmarks[0] && [11,12,13,14,15,16,23,24].every(i => (result.landmarks[0][i].visibility ?? 1) > .45);
+
+    hudFps.textContent = Math.round(fps) || '—';
+    hudLatency.textContent = trackedOk ? `${Math.round(latencyMs)}ms` : '—';
+
+    let streaming = false;
+    if(trackedOk){
+      const l = result.landmarks[0];
+      new DrawingUtils(ctx).drawConnectors(l, PoseLandmarker.POSE_CONNECTIONS, { color: '#4fd8e055', lineWidth: 2 });
+
+      // Front-camera mirror: the person's left arm drives the robot's right arm.
+      const right = side(l, 11, 13, 15, 23), left = side(l, 12, 14, 16, 24);
+      const raw = { right_shoulder: right.shoulder, right_elbow: right.elbow, left_shoulder: left.shoulder, left_elbow: left.elbow };
+      const prev = smoothed || raw;
+      smoothed = Object.fromEntries(Object.entries(raw).map(([k,x]) => [k, Math.round(prev[k]*.7 + x*.3)]));
+
+      for(const key in chips){
+        const idx = JOINT_LANDMARK[key];
+        const px = l[idx].x * canvas.width, py = l[idx].y * canvas.height;
+        drawJointMarker(ctx, px, py);
+        const chip = chips[key];
+        chip.el.style.display = '';
+        // .camera-wrap's video/canvas are CSS-mirrored (scaleX(-1)); the
+        // chip is a plain sibling div, not mirrored itself, so its own
+        // position has to be flipped by hand (1 - x) to land in the
+        // right spot on the mirrored display.
+        chip.el.style.left = `${(1 - l[idx].x) * 100}%`;
+        chip.el.style.top = `${l[idx].y * 100}%`;
+        chip.el.querySelector('.jc-angle').textContent = `${smoothed[key]}°`;
+        chip.grid.textContent = `${smoothed[key]}°`;
+      }
+
+      hudLock.textContent = 'TRACKING'; hudLock.className = 'ok';
+
+      const endpoint = endpointInput.value.trim();
+      if(endpoint && now - lastSent > 100 && !sending){
+        lastSent = now; sending = true; streaming = true;
+        const token = localStorage.getItem('meccanoid.token') || '';
+        fetch(endpoint, {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+          body: JSON.stringify({ joints: smoothed }),
+        }).then(r => { if(!r.ok) throw new Error(`Mirror endpoint HTTP ${r.status}`); })
+          .catch(e => { camStatusText.textContent = e.message; })
+          .finally(() => { sending = false; });
+      }
+      hudUplink.textContent = endpoint ? (streaming ? 'LIVE' : 'IDLE') : 'OFF';
+      hudUplink.className = streaming ? 'ok' : 'dim-txt';
+    }else{
+      camStatusText.textContent = 'Move back until shoulders, elbows and wrists are visible';
+      hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
+      hudUplink.textContent = endpointInput.value.trim() ? 'IDLE' : 'OFF';
+      hudUplink.className = 'dim-txt';
+      for(const k in chips) chips[k].el.style.display = 'none';
+    }
+
+    raf = requestAnimationFrame(loop);
+  }
+
+  toggleBtn.addEventListener('click', () => { running ? stop() : start(); });
+  window.addEventListener('beforeunload', () => stop(false));
 })();
 </script>
 </body>

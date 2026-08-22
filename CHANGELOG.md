@@ -5,6 +5,21 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Fixed
+- `docs/index.html` (the GitHub Pages dashboard) had drifted out of sync
+  with `app/` (the Next.js one): it was missing Codex's 6 newer meme
+  gestures (`aura_farm`, `six_seven`, `npc_mode`, `facepalm`,
+  `success_pump`, `side_eye`) and had no camera mirror feature at all —
+  the pose mirror only existed as a Next.js route. Added the 6 missing
+  buttons and ported the camera mirror (on-device MediaPipe tracking +
+  the same live HUD from `app/mirror/page.tsx`: corner brackets,
+  FPS/latency/lock/uplink readout, glowing joint markers, floating angle
+  chips, always-visible angle grid) as vanilla JS/canvas — no
+  React/Next.js/build-step needed, matching this file's zero-dependency
+  design. Verified end-to-end in-browser: model loads, gesture buttons
+  round-trip correctly, and camera-permission denial is handled
+  gracefully (shows "Permission denied", resets cleanly, no crash).
+
 ### Added
 - `app/mirror/page.tsx` HUD overhaul: corner brackets, a live FPS/latency/
   tracking-lock/uplink readout, glowing joint markers on the wireframe,
