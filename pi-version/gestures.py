@@ -135,6 +135,56 @@ KEYWORD_TRIGGERS = {
 }
 
 
+
+# Current-generation reaction gestures. Kept separate from the original table
+# so merge conflicts with the classic/Claude gesture set stay obvious.
+GESTURES.update({
+    "aura_farm": [
+        ({0: 115, 1: 70, 2: 70, 3: 115}, 0.55),
+        ({0: 70, 1: 115, 2: 115, 3: 70}, 0.55),
+        ({0: 125, 1: 80, 2: 125, 3: 80}, 0.7),
+        (REST, 0.5),
+    ],
+    "six_seven": [
+        ({0: 75, 1: 115, 2: 115, 3: 75}, 0.3),
+        ({0: 115, 1: 75, 2: 75, 3: 115}, 0.3),
+        ({0: 75, 1: 115, 2: 115, 3: 75}, 0.3),
+        ({0: 115, 1: 75, 2: 75, 3: 115}, 0.3),
+        (REST, 0.4),
+    ],
+    "npc_mode": [
+        ({0: 120, 1: 60, 2: 120, 3: 60}, 0.18),
+        ({0: 105, 1: 85, 2: 105, 3: 85}, 0.18),
+        ({0: 120, 1: 60, 2: 120, 3: 60}, 0.18),
+        ({0: 105, 1: 85, 2: 105, 3: 85}, 0.18),
+        (REST, 0.4),
+    ],
+    "facepalm": [
+        ({0: 125, 1: 35, 2: 90, 3: 90}, 0.55),
+        ({0: 125, 1: 35, 2: 90, 3: 90}, 0.65),
+        (REST, 0.55),
+    ],
+    "success_pump": [
+        ({0: 145, 1: 45, 2: 90, 3: 90}, 0.25),
+        ({0: 120, 1: 70, 2: 90, 3: 90}, 0.18),
+        ({0: 145, 1: 45, 2: 90, 3: 90}, 0.3),
+        (REST, 0.45),
+    ],
+    "side_eye": [
+        ({0: 125, 1: 55, 2: 80, 3: 105}, 0.45),
+        ({0: 125, 1: 55, 2: 80, 3: 105}, 0.7),
+        (REST, 0.5),
+    ],
+})
+KEYWORD_TRIGGERS.update({
+    "aura_farm": ["aura farm", "farm aura", "maximum aura"],
+    "six_seven": ["six seven gesture", "67 gesture", "do six seven"],
+    "npc_mode": ["npc mode", "act like an npc", "yes yes npc"],
+    "facepalm": ["facepalm", "bruh moment"],
+    "success_pump": ["success pose", "victory pump", "big win"],
+    "side_eye": ["side eye", "suspicious look", "really bro"],
+})
+
 def _phrase_matches(phrase: str, lower_text: str) -> bool:
     """Word-boundary match, not a bare substring test — otherwise 'bow'
     would fire inside 'rainbow'/'elbow', 'sit down' inside 'visit downtown',

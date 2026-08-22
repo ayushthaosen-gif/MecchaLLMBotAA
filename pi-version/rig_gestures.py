@@ -192,6 +192,55 @@ KEYWORD_TRIGGERS = {
 }
 
 
+
+# Current-generation reaction gestures, reconciled with the classic set above.
+GESTURES.update({
+    "aura_farm": [
+        ({"right_shoulder":115,"right_elbow":70,"left_shoulder":70,"left_elbow":115},0.55),
+        ({"right_shoulder":70,"right_elbow":115,"left_shoulder":115,"left_elbow":70},0.55),
+        ({"right_shoulder":125,"right_elbow":80,"left_shoulder":125,"left_elbow":80},0.7),
+        (REST_POSE,0.5),
+    ],
+    "six_seven": [
+        ({"right_shoulder":75,"right_elbow":115,"left_shoulder":115,"left_elbow":75},0.3),
+        ({"right_shoulder":115,"right_elbow":75,"left_shoulder":75,"left_elbow":115},0.3),
+        ({"right_shoulder":75,"right_elbow":115,"left_shoulder":115,"left_elbow":75},0.3),
+        ({"right_shoulder":115,"right_elbow":75,"left_shoulder":75,"left_elbow":115},0.3),
+        (REST_POSE,0.4),
+    ],
+    "npc_mode": [
+        ({"right_shoulder":120,"right_elbow":60,"left_shoulder":120,"left_elbow":60},0.18),
+        ({"right_shoulder":105,"right_elbow":85,"left_shoulder":105,"left_elbow":85},0.18),
+        ({"right_shoulder":120,"right_elbow":60,"left_shoulder":120,"left_elbow":60},0.18),
+        ({"right_shoulder":105,"right_elbow":85,"left_shoulder":105,"left_elbow":85},0.18),
+        (REST_POSE,0.4),
+    ],
+    "facepalm": [
+        ({"right_shoulder":125,"right_elbow":35},0.55),
+        ({"right_shoulder":125,"right_elbow":35},0.65),
+        (REST_POSE,0.55),
+    ],
+    "success_pump": [
+        ({"right_shoulder":145,"right_elbow":45},0.25),
+        ({"right_shoulder":120,"right_elbow":70},0.18),
+        ({"right_shoulder":145,"right_elbow":45},0.3),
+        (REST_POSE,0.45),
+    ],
+    "side_eye": [
+        ({"right_shoulder":125,"right_elbow":55,"left_shoulder":80,"left_elbow":105},0.45),
+        ({"right_shoulder":125,"right_elbow":55,"left_shoulder":80,"left_elbow":105},0.7),
+        (REST_POSE,0.5),
+    ],
+})
+KEYWORD_TRIGGERS.update({
+    "aura_farm": ["aura farm", "farm aura", "maximum aura"],
+    "six_seven": ["six seven gesture", "67 gesture", "do six seven"],
+    "npc_mode": ["npc mode", "act like an npc", "yes yes npc"],
+    "facepalm": ["facepalm", "bruh moment"],
+    "success_pump": ["success pose", "victory pump", "big win"],
+    "side_eye": ["side eye", "suspicious look", "really bro"],
+})
+
 def match_gesture_from_text(text: str) -> Optional[str]:
     """Picks the most specific (longest) matching trigger phrase across all
     gestures, rather than the first gesture checked in dict order."""
