@@ -30,6 +30,7 @@ from servo_controller import ServoBus, ServoBusConfig
 from motion_engine import MotionEngine
 from gestures import match_gesture_from_text
 from llm_backend import build_llm_backend
+from mirror_control import MirrorController
 
 # ---------------------------------------------------------------------------
 # Config
@@ -40,13 +41,16 @@ LLM_BACKEND = os.environ.get("LLM_BACKEND", "ollama")
 DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN")  # if set, /chat requires it
 MEMORY_FILE = Path(os.environ.get("MEMORY_FILE", "robot_memory.txt"))
 SIMULATE_SERVOS = os.environ.get("SIMULATE_SERVOS", "1") != "0"
-WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")  # e.g. "40.71,-74.01"
+WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")
+ENABLE_MIRROR_CONTROL = os.environ.get("ENABLE_MIRROR_CONTROL", "0") == "1"
+MIRROR_ALLOWED_ORIGIN = os.environ.get("MIRROR_ALLOWED_ORIGIN", "")  # e.g. "40.71,-74.01"
 
 llm = build_llm_backend(LLM_BACKEND)
 
 bus = ServoBus(ServoBusConfig(simulate=SIMULATE_SERVOS, servo_count=4))
 motion = MotionEngine(bus)
 motion.start()
+mirror = MirrorController(bus) if ENABLE_MIRROR_CONTROL else None
 
 app = Flask(__name__)
 
@@ -171,12 +175,42 @@ def chat():
     })
 
 
+
+@app.after_request
+def add_mirror_cors(response):
+    if MIRROR_ALLOWED_ORIGIN and request.path == "/mirror_pose":
+        response.headers["Access-Control-Allow-Origin"] = MIRROR_ALLOWED_ORIGIN
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
+@app.route("/mirror_pose", methods=["POST", "OPTIONS"])
+def mirror_pose():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    if not mirror:
+        return jsonify({"error": "mirror control is disabled"}), 503
+    if DASHBOARD_TOKEN and request.headers.get("Authorization", "") != f"Bearer {DASHBOARD_TOKEN}":
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        applied = mirror.apply(body.get("joints") or {})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 429
+    return jsonify({"applied": applied})
+
+
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({
         "busy": motion.is_busy,
         "servo_count": bus.config.servo_count,
         "simulated": bus.config.simulate,
+        "mirror_enabled": mirror is not None,
     })
 
 
