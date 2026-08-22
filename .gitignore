@@ -11,3 +11,4 @@ node_modules/
 .next/
 .vinext/
 .wrangler/
+*.tsbuildinfo

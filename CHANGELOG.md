@@ -5,6 +5,25 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Added
+- `app/mirror/page.tsx` HUD overhaul: corner brackets, a live FPS/latency/
+  tracking-lock/uplink readout, glowing joint markers on the wireframe,
+  and floating angle-label chips positioned at each tracked joint on the
+  video, plus an always-visible 4-tile angle grid below it. Joint chips
+  are separate (non-mirrored) DOM elements rather than canvas text —
+  canvas text would render backwards, since `.camera video,.camera
+  canvas` are CSS-mirrored (`scaleX(-1)`) for the front-camera view but
+  the chips aren't.
+
+### Fixed
+- Stale-closure bug caught while adding the HUD: `loop()` recurses via
+  its own `requestAnimationFrame` call, not through React re-renders, so
+  a `hud` value captured in that closure would never see later state
+  updates. The "uplink streaming" indicator now reads a ref
+  (`lastSent.current`) instead. Also fixed a pre-existing (not
+  introduced by this change) TS type error on the start/stop button's
+  `onClick` handler.
+
 ### Changed
 - Renamed `docs/dashboard.html` → `docs/index.html`. GitHub Pages (repo
   → Settings → Pages → Source: branch `main`, folder `/docs`) serves
