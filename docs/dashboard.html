@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MECCANOID // REMOTE CONSOLE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14171a;
+    --panel:#1c2025;
+    --panel-2:#242a30;
+    --line:#383e46;
+    --text:#e9e7e1;
+    --dim:#8d949c;
+    --amber:#ffb020;
+    --cyan:#4fd8e0;
+    --red:#e5595d;
+    --radius:10px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:
+      radial-gradient(circle at 50% -10%, #1e242b 0%, var(--bg) 55%);
+    color:var(--text);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    padding:20px 14px 60px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:480px; margin:0 auto;}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:22px;
+  }
+  .brand{
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--dim);
+  }
+  .brand b{color:var(--text);}
+  .unit-id{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px; color:var(--dim);
+    border:1px solid var(--line); border-radius:20px;
+    padding:4px 10px;
+  }
+
+  /* ---------- core gauge (signature element) ---------- */
+  .core-stage{
+    position:relative;
+    display:flex; flex-direction:column; align-items:center;
+    padding:18px 0 8px;
+  }
+  .core-ring{ width:220px; height:220px; }
+  .core-ring svg{ width:100%; height:100%; transform:rotate(-90deg); }
+  .core-ring .track{ fill:none; stroke:var(--panel-2); stroke-width:6; }
+  .core-ring .seg{
+    fill:none; stroke-width:6; stroke-linecap:round;
+    stroke:var(--amber);
+    filter:drop-shadow(0 0 6px rgba(255,176,32,.55));
+    transition:stroke .3s ease;
+  }
+  body.state-active .core-ring .seg{ stroke:var(--cyan); filter:drop-shadow(0 0 8px rgba(79,216,224,.65)); animation:spin 2.4s linear infinite; }
+  body.state-alert .core-ring .seg{ stroke:var(--red); filter:drop-shadow(0 0 8px rgba(229,89,93,.6)); }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .core-ring svg .seg{ transform-origin:50% 50%; }
+
+  .core-center{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    text-align:center;
+  }
+  .core-center .status-word{
+    font-family:'JetBrains Mono', monospace; font-size:11px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--dim);
+  }
+  .core-center .status-main{
+    font-family:'JetBrains Mono', monospace; font-size:22px; font-weight:700;
+    margin-top:2px;
+  }
+  body.state-active .core-center .status-main{ color:var(--cyan); }
+  body.state-alert .core-center .status-main{ color:var(--red); }
+  body.state-idle .core-center .status-main{ color:var(--amber); }
+
+  .core-tap-hint{
+    font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--dim);
+    letter-spacing:.1em; text-transform:uppercase; margin-top:10px;
+    cursor:pointer; user-select:none;
+  }
+  .core-tap-hint:active{ opacity:.6; }
+
+  /* ---------- telemetry strip ---------- */
+  .telemetry{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+    margin:18px 0;
+  }
+  .tele-cell{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:9px 10px;
+  }
+  .tele-cell .k{ font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--dim); letter-spacing:.1em; text-transform:uppercase; }
+  .tele-cell .v{ font-family:'JetBrains Mono',monospace; font-size:15px; margin-top:3px; }
+  .tele-cell .v.warn{ color:var(--amber); }
+  .tele-cell .v.ok{ color:var(--cyan); }
+
+  /* ---------- panels ---------- */
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; margin-bottom:14px;
+  }
+  .panel-title{
+    font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--dim); margin-bottom:10px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .panel-title::after{ content:''; flex:1; height:1px; background:var(--line); }
+
+  /* action toggles */
+  .actions{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  .act-btn{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+    color:var(--text); font-family:'Inter'; font-size:13px; font-weight:500;
+    padding:12px 10px; text-align:left; cursor:pointer;
+    display:flex; align-items:center; gap:8px;
+    transition:border-color .15s, background .15s;
+  }
+  .act-btn .dot{ width:6px; height:6px; border-radius:50%; background:var(--dim); flex-shrink:0; }
+  .act-btn:active{ background:#2c333b; }
+  .act-btn.firing{ border-color:var(--cyan); }
+  .act-btn.firing .dot{ background:var(--cyan); box-shadow:0 0 6px var(--cyan); }
+
+  /* comms / chat */
+  .comms-feed{
+    height:220px; overflow-y:auto; font-family:'JetBrains Mono', monospace;
+    font-size:12.5px; line-height:1.55; padding-right:4px;
+  }
+  .comms-feed::-webkit-scrollbar{ width:4px; }
+  .comms-feed::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+  .line{ margin-bottom:10px; }
+  .line .tag{ color:var(--dim); }
+  .line.you .tag{ color:var(--amber); }
+  .line.bot .tag{ color:var(--cyan); }
+  .line .msg{ color:var(--text); }
+
+  .comms-input{
+    display:flex; gap:8px; margin-top:10px; border-top:1px solid var(--line); padding-top:10px;
+  }
+  .comms-input input{
+    flex:1; background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+    padding:9px 10px; color:var(--text); font-family:'Inter'; font-size:13px;
+  }
+  .comms-input input:focus{ outline:none; border-color:var(--cyan); }
+  .comms-input button{
+    background:var(--cyan); border:none; border-radius:6px; padding:0 16px;
+    font-family:'JetBrains Mono'; font-weight:700; font-size:12px; color:#0e1113;
+    cursor:pointer;
+  }
+  .comms-input button:active{ opacity:.75; }
+
+  /* memory log */
+  .mem-item{
+    display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);
+    font-size:12.5px;
+  }
+  .mem-item:last-child{ border-bottom:none; }
+  .mem-time{ font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--dim); flex-shrink:0; width:44px; padding-top:2px; }
+  .mem-text{ color:var(--text); }
+
+  /* config */
+  .cfg-row{ display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+  .cfg-row label{ font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--dim); letter-spacing:.08em; text-transform:uppercase; }
+  .cfg-row input{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+    padding:8px 10px; color:var(--text); font-family:'JetBrains Mono'; font-size:12px;
+  }
+  .cfg-row input:focus{ outline:none; border-color:var(--cyan); }
+  .cfg-note{ font-size:11px; color:var(--dim); line-height:1.5; margin-top:6px; }
+  .cfg-save{
+    margin-top:4px; background:transparent; border:1px solid var(--cyan); color:var(--cyan);
+    border-radius:6px; padding:8px 12px; font-family:'JetBrains Mono'; font-size:11px;
+    letter-spacing:.08em; text-transform:uppercase; cursor:pointer; width:100%;
+  }
+  .cfg-save:active{ background:rgba(79,216,224,.1); }
+
+  @media (prefers-reduced-motion: reduce){
+    body.state-active .core-ring .seg{ animation:none; }
+  }
+</style>
+</head>
+<body class="state-idle">
+<div class="wrap">
+
+  <header>
+    <div class="brand"><b>MECCANOID</b> // CONSOLE</div>
+    <div class="unit-id" id="unitId">UNIT-01 · G15KS</div>
+  </header>
+
+  <div class="core-stage">
+    <div class="core-ring">
+      <svg viewBox="0 0 100 100">
+        <circle class="track" cx="50" cy="50" r="42"></circle>
+        <circle class="seg" id="coreSeg" cx="50" cy="50" r="42"
+          stroke-dasharray="180 264" stroke-dashoffset="0"></circle>
+      </svg>
+      <div class="core-center">
+        <div class="status-word" id="statusWord">Standby</div>
+        <div class="status-main" id="statusMain">IDLE</div>
+      </div>
+    </div>
+    <div class="core-tap-hint" id="wakeBtn">▲ tap core to wake unit</div>
+  </div>
+
+  <div class="telemetry">
+    <div class="tele-cell">
+      <div class="k">Battery</div>
+      <div class="v ok" id="telBattery">86%</div>
+    </div>
+    <div class="tele-cell">
+      <div class="k">Latency</div>
+      <div class="v" id="telLatency">—</div>
+    </div>
+    <div class="tele-cell">
+      <div class="k">Servos</div>
+      <div class="v ok" id="telServos">12/12</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Motor Actions</div>
+    <div class="actions">
+      <button class="act-btn" data-action="wave"><span class="dot"></span>Wave</button>
+      <button class="act-btn" data-action="dance"><span class="dot"></span>Dance</button>
+      <button class="act-btn" data-action="look"><span class="dot"></span>Look around</button>
+      <button class="act-btn" data-action="sit"><span class="dot"></span>Sit / rest</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Comms Link</div>
+    <div class="comms-feed" id="feed"></div>
+    <div class="comms-input">
+      <input id="msgInput" type="text" placeholder="Say something to the robot…" />
+      <button id="sendBtn">SEND</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Memory Log</div>
+    <div id="memLog"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Link Configuration</div>
+    <div class="cfg-row">
+      <label>Backend endpoint</label>
+      <input id="cfgEndpoint" type="text" placeholder="https://your-pi-or-cloud-fn.example.com/chat" />
+    </div>
+    <div class="cfg-row">
+      <label>Auth token (optional)</label>
+      <input id="cfgToken" type="text" placeholder="shared secret sent as Bearer token" />
+    </div>
+    <button class="cfg-save" id="cfgSave">Save link settings</button>
+    <div class="cfg-note">
+      Kept in memory for this session only. Point this at the endpoint your Raspberry Pi (or a Firebase/Supabase function in front of it) exposes — this page never talks to the Claude API directly. Until an endpoint is set, the console runs in demo mode with simulated responses.
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const state = {
+    endpoint: '',
+    token: '',
+    demo: true,
+  };
+
+  const body = document.body;
+  const feed = document.getElementById('feed');
+  const memLog = document.getElementById('memLog');
+  const coreSeg = document.getElementById('coreSeg');
+  const statusWord = document.getElementById('statusWord');
+  const statusMain = document.getElementById('statusMain');
+  const telLatency = document.getElementById('telLatency');
+  const telBattery = document.getElementById('telBattery');
+
+  const CIRC = 2 * Math.PI * 42; // ~264
+
+  function setRingPct(pct){
+    const dash = CIRC * pct;
+    coreSeg.setAttribute('stroke-dasharray', `${dash} ${CIRC}`);
+  }
+
+  function setMode(mode){
+    body.classList.remove('state-idle','state-active','state-alert');
+    body.classList.add('state-' + mode);
+    if(mode === 'idle'){ statusWord.textContent = 'Standby'; statusMain.textContent = 'IDLE'; setRingPct(0.35); }
+    if(mode === 'active'){ statusWord.textContent = 'Linked'; statusMain.textContent = 'ONLINE'; setRingPct(0.82); }
+    if(mode === 'alert'){ statusWord.textContent = 'Attention'; statusMain.textContent = 'ALERT'; setRingPct(0.15); }
+  }
+
+  function addFeedLine(who, text){
+    const el = document.createElement('div');
+    el.className = 'line ' + who;
+    const tag = who === 'you' ? 'YOU »' : 'BOT »';
+    el.innerHTML = `<span class="tag">${tag}</span> <span class="msg"></span>`;
+    el.querySelector('.msg').textContent = text;
+    feed.appendChild(el);
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function addMemory(text){
+    const now = new Date();
+    const t = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const row = document.createElement('div');
+    row.className = 'mem-item';
+    row.innerHTML = `<div class="mem-time">${t}</div><div class="mem-text"></div>`;
+    row.querySelector('.mem-text').textContent = text;
+    memLog.prepend(row);
+  }
+
+  // seed
+  addFeedLine('bot', "Chest core warm. I'm awake and listening.");
+  addMemory('Session started — demo mode, no backend linked yet.');
+  setMode('idle');
+
+  document.getElementById('wakeBtn').addEventListener('click', () => {
+    setMode('active');
+    addFeedLine('bot', 'Core spun up. Ready for commands.');
+    setTimeout(() => { if(!body.classList.contains('state-alert')) setMode('active'); }, 10);
+  });
+
+  document.querySelectorAll('.act-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      btn.classList.add('firing');
+      setMode('active');
+      addFeedLine('bot', `Executing "${action}" motor sequence…`);
+      addMemory(`Ran physical action: ${action}`);
+      setTimeout(() => btn.classList.remove('firing'), 1400);
+    });
+  });
+
+  document.getElementById('cfgSave').addEventListener('click', () => {
+    state.endpoint = document.getElementById('cfgEndpoint').value.trim();
+    state.token = document.getElementById('cfgToken').value.trim();
+    state.demo = state.endpoint.length === 0;
+    addFeedLine('bot', state.demo
+      ? 'No endpoint set — staying in demo mode.'
+      : `Link settings saved. Will call ${state.endpoint}`);
+  });
+
+  async function sendMessage(){
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = '';
+    addFeedLine('you', text);
+    addMemory(`You said: ${text}`);
+    setMode('active');
+
+    const started = performance.now();
+
+    if(state.demo){
+      // Simulated round trip so the dashboard is fully testable before the
+      // Raspberry Pi backend exists.
+      await new Promise(r => setTimeout(r, 550 + Math.random()*500));
+      telLatency.textContent = Math.round(performance.now()-started) + 'ms';
+      const reply = demoReply(text);
+      addFeedLine('bot', reply);
+      addMemory(`Robot replied: ${reply}`);
+      setMode('idle');
+      return;
+    }
+
+    try{
+      const res = await fetch(state.endpoint, {
+        method: 'POST',
+        headers: Object.assign(
+          {'Content-Type':'application/json'},
+          state.token ? {'Authorization':'Bearer ' + state.token} : {}
+        ),
+        body: JSON.stringify({ message: text })
+      });
+      const data = await res.json();
+      telLatency.textContent = Math.round(performance.now()-started) + 'ms';
+      const reply = data.reply || '(no reply field in response)';
+      addFeedLine('bot', reply);
+      addMemory(`Robot replied: ${reply}`);
+      setMode('idle');
+    }catch(err){
+      setMode('alert');
+      addFeedLine('bot', 'Link error — could not reach the robot backend.');
+      addMemory('Comms error: ' + err.message);
+    }
+  }
+
+  function demoReply(text){
+    const lower = text.toLowerCase();
+    if(lower.includes('weather')) return "(demo) It's 68°F and clear where you are — real weather needs the Pi's search module wired in.";
+    if(lower.includes('dance')) return "Spinning up the dance sequence now.";
+    if(lower.includes('name')) return "I'm your Meccanoid — cloud brain, chest-mounted Pi, still learning.";
+    return "(demo mode) Once linked to your Pi, this reply will come from the real Claude API call.";
+  }
+
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('msgInput').addEventListener('keydown', e => {
+    if(e.key === 'Enter') sendMessage();
+  });
+})();
+</script>
+</body>
+</html>

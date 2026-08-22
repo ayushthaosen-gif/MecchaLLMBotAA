@@ -1,0 +1,7 @@
+flask>=3.0
+requests>=2.31
+pyserial>=3.5
+
+# Only needed if you set LLM_BACKEND=claude (paid API backend). Not required
+# for the default free/local Ollama backend.
+anthropic>=0.34

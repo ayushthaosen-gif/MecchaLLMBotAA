@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MECCANOID BUILD // BOM &amp; COST SHEET</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --pcb:#0f3d2e;
+    --pcb-dark:#0a2b21;
+    --silk:#eef1ea;
+    --silk-dim:#c9d2c6;
+    --copper:#c87f4a;
+    --copper-bright:#e0995f;
+    --ink:#0d1712;
+    --ok:#7fd99a;
+    --line: rgba(238,241,234,.14);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0px, rgba(255,255,255,.015) 1px, transparent 1px, transparent 3px),
+      var(--pcb);
+    color:var(--silk);
+    font-family:'IBM Plex Sans', sans-serif;
+    min-height:100vh;
+    padding:18px 14px 70px;
+  }
+  .wrap{max-width:520px; margin:0 auto;}
+
+  header{ margin-bottom:18px; }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--copper-bright);
+  }
+  h1{
+    font-family:'IBM Plex Mono', monospace; font-size:19px; font-weight:700;
+    margin-top:4px; letter-spacing:.01em;
+  }
+  .sub{ font-size:12.5px; color:var(--silk-dim); margin-top:6px; line-height:1.5; }
+  .sub a{ color:var(--copper-bright); }
+
+  .section-label{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--copper-bright);
+    margin:22px 0 8px; display:flex; align-items:center; gap:8px;
+  }
+  .section-label::after{ content:''; flex:1; height:1px; background:var(--line); }
+
+  .part{
+    display:grid;
+    grid-template-columns:22px 1fr auto auto;
+    align-items:center;
+    gap:10px;
+    padding:10px 4px;
+    border-bottom:1px solid var(--line);
+  }
+  .part:last-child{ border-bottom:none; }
+
+  .ref{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--copper-bright);
+    text-align:left;
+  }
+  .part-check{
+    width:16px; height:16px; accent-color:var(--copper);
+    cursor:pointer;
+  }
+  .part-info{ min-width:0; }
+  .part-name{ font-size:13px; font-weight:500; line-height:1.35; }
+  .part-name a{ color:inherit; text-decoration:none; border-bottom:1px dotted var(--silk-dim); }
+  .part-note{ font-size:11px; color:var(--silk-dim); margin-top:2px; }
+
+  .qty{
+    display:flex; align-items:center; gap:6px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .qty button{
+    width:22px; height:22px; border-radius:3px; border:1px solid var(--line);
+    background:transparent; color:var(--silk); font-size:13px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; line-height:1;
+  }
+  .qty button:active{ background:rgba(255,255,255,.08); }
+  .qty span{ min-width:16px; text-align:center; font-size:12.5px; }
+
+  .price{
+    font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:600;
+    text-align:right; min-width:64px;
+    color:var(--silk);
+  }
+  .price.dim{ color:var(--silk-dim); font-weight:400; }
+
+  .estimate-flag{
+    font-family:'IBM Plex Mono', monospace; font-size:9px; color:var(--copper-bright);
+    vertical-align:super;
+  }
+
+  /* receipt-style total */
+  .total-card{
+    margin-top:26px;
+    background:var(--pcb-dark);
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:16px 16px 14px;
+    position:relative;
+  }
+  .total-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:'IBM Plex Mono', monospace;
+    padding:5px 0;
+    font-size:12.5px;
+    color:var(--silk-dim);
+  }
+  .total-row.grand{
+    border-top:1px dashed var(--line);
+    margin-top:8px; padding-top:12px;
+    color:var(--silk); font-size:16px; font-weight:700;
+  }
+  .total-row.grand .amount{ color:var(--ok); }
+  .perforation{
+    position:absolute; left:0; right:0; bottom:-7px; height:14px;
+    background-image: radial-gradient(circle, var(--pcb) 3px, transparent 3.5px);
+    background-size: 14px 14px;
+    background-position: -3px 0;
+  }
+
+  .note-block{
+    margin-top:20px; font-size:11.5px; color:var(--silk-dim); line-height:1.6;
+    border-left:2px solid var(--copper); padding-left:10px;
+  }
+  .note-block b{ color:var(--silk); }
+
+  .toggle-row{
+    display:flex; align-items:center; gap:8px; margin-top:6px;
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--silk-dim);
+  }
+
+  @media (prefers-reduced-motion: reduce){ * { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">// BILL OF MATERIALS — SOURCE: ROBU.IN</div>
+    <h1>Meccanoid ESP32-Cloud Build</h1>
+    <div class="sub">
+      Parts for the ESP32 + wheeled-feet + arm-servo electronics layer.
+      Prices pulled from live robu.in listings (INR, incl. GST) — check
+      each link before ordering since prices/stock change.
+      <br><b>Not included:</b> the Meccanoid Personal Robot 2.0 itself —
+      buy that separately; this list only covers the electronics added
+      on top of it.
+      <br><br><b>Speaker/mic note:</b> the stock speaker + mic are wired
+      directly to the original MeccaBrain, not on the same addressable
+      bus as the servos/LEDs — they can't be repurposed for LLM-generated
+      speech. U5/MIC1/SPK1 below are new, independent hardware, same
+      approach as the servo/LED takeover.
+    </div>
+  </header>
+
+  <div class="section-label">Core — required</div>
+  <div id="core-parts"></div>
+
+  <div class="section-label">Optional / upgrades</div>
+  <div id="optional-parts"></div>
+
+  <div class="total-card">
+    <div class="total-row"><span>Core items</span><span class="amount" id="coreTotal">₹0</span></div>
+    <div class="total-row"><span>Optional items selected</span><span class="amount" id="optTotal">₹0</span></div>
+    <div class="total-row grand"><span>TOTAL</span><span class="amount" id="grandTotal">₹0</span></div>
+    <div class="perforation"></div>
+  </div>
+
+  <div class="note-block">
+    <b>*</b> marked prices are estimates (exact live price didn't resolve at check time) —
+    verify on robu.in before ordering.<br><br>
+    <b>Free delivery</b> above ₹999 on most robu.in orders — bundling
+    core + optional items may clear that threshold and save on shipping.
+  </div>
+
+</div>
+
+<script>
+const CORE_PARTS = [
+  { ref: "U1", name: "ESP32-WROOM-32 38-Pin Dev Board", note: "the robot's brain — WiFi, drives servos + wheels", price: 399, qty: 1,
+    url: "https://robu.in/product/esp32-38pin-development-board-wifibluetooth-ultra-low-power-consumption-dual-core/" },
+  { ref: "U2", name: "8-Channel Bi-Directional Logic Level Converter", note: "3.3V (ESP32) ↔ 5V (Meccanoid servo bus)", price: 77, qty: 1,
+    url: "https://robu.in/product/8-channel-bi-directional-logic-level-converter-module/" },
+  { ref: "U3", name: "L298N Motor Driver Module, 2A", note: "drives the 2 wheeled-foot DC motors", price: 146, qty: 1,
+    url: "https://robu.in/product/l298-based-motor-driver-module-2a/" },
+  { ref: "PCB1", name: "MB102 Breadboard, 830 point", note: "solderless prototyping", price: 63, qty: 1,
+    url: "https://robu.in/product/mb102-830-points-solderless-prototype-pcb-breadboard-high-quality/" },
+  { ref: "W1", name: "Jumper Wires, Male-Male, 40pcs", note: "breadboard + module wiring", price: 46, qty: 2,
+    url: "https://robu.in/product/male-to-male-jumper-wires-40pcs-20cm/" },
+  { ref: "R1", name: "Assorted Resistor Kit, 250pcs", note: "includes 4.7kΩ pull-ups for the servo bus", price: 192, qty: 1,
+    url: "https://robu.in/product/assorted-resistor-kit-250-pcs/" },
+  { ref: "PWR1", name: "18650 Aluminium Power Bank Case, 5V USB", note: "isolated supply for servos — keep off the ESP32's own rail", price: 144, qty: 1,
+    url: "https://robu.in/product/18650-battery-5v-usb-aluminium-body-power-bank-case/" },
+  { ref: "BAT1", name: "18650 Li-ion Cell, 2600mAh", note: "goes in the power bank case above", price: 250, qty: 2, estimate: true,
+    url: "https://robu.in/product/lg-inr18650-m26-2600mah-lithium-ion-battery/" },
+  { ref: "U5", name: "MAX98357A I2S Amplifier Breakout", note: "speaker output — real hardware speaker isn't reusable (see notes)", price: 181, qty: 1,
+    url: "https://robu.in/product/bgamax98357a-i2s-amplifier-breakout-module/" },
+  { ref: "MIC1", name: "INMP441 I2S MEMS Microphone", note: "voice input, for future STT integration", price: 139, qty: 1,
+    url: "https://robu.in/product/inmp441-mems-high-precision-omnidirectional-microphone-module-i2s/" },
+  { ref: "SPK1", name: "0.5W 8Ω Mini Speaker, 36mm", note: "budget option — see note below for a louder upgrade", price: 22, qty: 1,
+    url: "https://robu.in/product/0-5w-8ohm-trumpet-diameter-36mm/" },
+];
+
+const OPTIONAL_PARTS = [
+  { ref: "TOOL1", name: "USB Logic Analyzer, 24MHz 8CH", note: "no longer required — official protocol docs + working libraries exist (see project notes). Keep only if you want to double-check signals yourself", price: 499, qty: 1, checked: false,
+    url: "https://robu.in/product/usb-logic-analyze-24m-8ch-mcu-arm-fpga-dsp-debug-tool/" },
+  { ref: "U4", name: "ESP32-S3-DevKitC-1 N8R8 (8MB PSRAM)", note: "only needed for the local-tiny-LLM experiment discussed earlier", price: 1839, qty: 1, checked: false,
+    url: "https://robu.in/product/espressif-esp32-s3-devkitc-1-n8r8-development-board/" },
+];
+
+function renderList(containerId, parts, isOptional){
+  const container = document.getElementById(containerId);
+  parts.forEach((part, idx) => {
+    const row = document.createElement('div');
+    row.className = 'part';
+    const checked = isOptional ? (part.checked ? 'checked' : '') : 'checked disabled';
+    row.innerHTML = `
+      <input type="checkbox" class="part-check" ${checked} data-idx="${idx}" data-list="${containerId}">
+      <div class="part-info">
+        <div class="ref">${part.ref}</div>
+        <div class="part-name"><a href="${part.url}" target="_blank" rel="noopener">${part.name}</a></div>
+        <div class="part-note">${part.note}</div>
+      </div>
+      <div class="qty">
+        <button class="qty-dec" data-idx="${idx}" data-list="${containerId}">−</button>
+        <span class="qty-val" data-idx="${idx}" data-list="${containerId}">${part.qty}</span>
+        <button class="qty-inc" data-idx="${idx}" data-list="${containerId}">+</button>
+      </div>
+      <div class="price ${isOptional && !part.checked ? 'dim' : ''}" data-idx="${idx}" data-list="${containerId}">
+        ₹${part.price * part.qty}${part.estimate ? '<span class="estimate-flag">*</span>' : ''}
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+renderList('core-parts', CORE_PARTS, false);
+renderList('optional-parts', OPTIONAL_PARTS, true);
+
+function recalc(){
+  let coreTotal = 0;
+  CORE_PARTS.forEach(p => coreTotal += p.price * p.qty);
+
+  let optTotal = 0;
+  OPTIONAL_PARTS.forEach(p => { if(p.checked) optTotal += p.price * p.qty; });
+
+  document.getElementById('coreTotal').textContent = `₹${coreTotal.toLocaleString('en-IN')}`;
+  document.getElementById('optTotal').textContent = `₹${optTotal.toLocaleString('en-IN')}`;
+  document.getElementById('grandTotal').textContent = `₹${(coreTotal + optTotal).toLocaleString('en-IN')}`;
+}
+
+function updatePriceCell(list, idx){
+  const parts = list === 'core-parts' ? CORE_PARTS : OPTIONAL_PARTS;
+  const part = parts[idx];
+  const cell = document.querySelector(`.price[data-list="${list}"][data-idx="${idx}"]`);
+  cell.innerHTML = `₹${part.price * part.qty}${part.estimate ? '<span class="estimate-flag">*</span>' : ''}`;
+  if(list === 'optional-parts'){
+    cell.classList.toggle('dim', !part.checked);
+  }
+}
+
+document.body.addEventListener('click', (e) => {
+  if(e.target.classList.contains('qty-inc') || e.target.classList.contains('qty-dec')){
+    const list = e.target.dataset.list;
+    const idx = parseInt(e.target.dataset.idx);
+    const parts = list === 'core-parts' ? CORE_PARTS : OPTIONAL_PARTS;
+    const part = parts[idx];
+    if(e.target.classList.contains('qty-inc')) part.qty += 1;
+    else part.qty = Math.max(0, part.qty - 1);
+    document.querySelector(`.qty-val[data-list="${list}"][data-idx="${idx}"]`).textContent = part.qty;
+    updatePriceCell(list, idx);
+    recalc();
+  }
+});
+
+document.body.addEventListener('change', (e) => {
+  if(e.target.classList.contains('part-check') && !e.target.disabled){
+    const list = e.target.dataset.list;
+    const idx = parseInt(e.target.dataset.idx);
+    OPTIONAL_PARTS[idx].checked = e.target.checked;
+    updatePriceCell(list, idx);
+    recalc();
+  }
+});
+
+recalc();
+</script>
+</body>
+</html>
