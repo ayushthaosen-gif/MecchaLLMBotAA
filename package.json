@@ -14,7 +14,8 @@
   "dependencies": {
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "drizzle-orm": "0.45.2"
+    "drizzle-orm": "0.45.2",
+    "@mediapipe/tasks-vision": "0.10.22-rc.20250304"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
