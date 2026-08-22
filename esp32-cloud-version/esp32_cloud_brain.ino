@@ -104,7 +104,8 @@ Keyframe GESTURE_SIT[] = {
 
 volatile int currentAngles[NUM_SERVOS] = {90, 90, 90, 90};
 SemaphoreHandle_t busMutex;
-QueueHandle_t gestureQueue; // holds pointers to a small struct describing which gesture to play
+QueueHandle_t gestureQueue;
+volatile bool commandInFlight = false;
 
 struct CommandRequest {
   char kind[12];
@@ -243,6 +244,7 @@ void motionTask(void* pvParameters) {
     // ACK only after a recognized command completes. Unknown commands remain
     // pending for inspection instead of being silently discarded.
     if (completed) acknowledgeCommand(req);
+    commandInFlight = false;
   }
 }
 
@@ -268,13 +270,14 @@ void pollQueue(const char* endpoint, const char* valueKey, const char* kind) {
 
       // Do not ACK when the local queue is full. The cloud will return the
       // same pending item on the next poll, providing at-least-once delivery.
-      xQueueSend(gestureQueue, &req, 0);
+      if (xQueueSend(gestureQueue, &req, 0) == pdTRUE) commandInFlight = true;
     }
   }
   http.end();
 }
 
 void pollCloudForCommand() {
+  if (commandInFlight) return;
   pollQueue("/next_motion", "gesture", "motion");
   pollQueue("/next_locomotion", "locomotion", "locomotion");
 }
