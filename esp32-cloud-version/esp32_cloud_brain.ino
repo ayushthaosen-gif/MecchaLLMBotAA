@@ -35,6 +35,8 @@
 const char* WIFI_SSID = "your-wifi-name";
 const char* WIFI_PASSWORD = "your-wifi-password";
 const char* CLOUD_BASE_URL = "https://your-region-your-project.cloudfunctions.net";
+const char* ROBOT_ID = "meccanoid-1";
+const char* ROBOT_API_TOKEN = "replace-with-a-long-random-token";
 // -----------------------
 
 #define SERVO_BUS_TX_PIN 17
@@ -42,6 +44,15 @@ const char* CLOUD_BASE_URL = "https://your-region-your-project.cloudfunctions.ne
 #define SERVO_BUS_BAUD   9600
 #define NUM_SERVOS       4
 #define POLL_INTERVAL_MS 1500
+
+// H-bridge pins for the two wheeled-foot DC motors. Verify these against
+// the selected motor driver before powering the motors.
+#define LEFT_MOTOR_IN1 25
+#define LEFT_MOTOR_IN2 26
+#define LEFT_MOTOR_PWM 32
+#define RIGHT_MOTOR_IN1 27
+#define RIGHT_MOTOR_IN2 14
+#define RIGHT_MOTOR_PWM 33
 
 HardwareSerial ServoBus(2);
 
@@ -95,8 +106,10 @@ volatile int currentAngles[NUM_SERVOS] = {90, 90, 90, 90};
 SemaphoreHandle_t busMutex;
 QueueHandle_t gestureQueue; // holds pointers to a small struct describing which gesture to play
 
-struct GestureRequest {
+struct CommandRequest {
+  char kind[12];
   char name[16];
+  char id[40];
 };
 
 // ---------------------------------------------------------------------------
@@ -147,71 +160,123 @@ void playKeyframeSequence(Keyframe* seq, int count) {
   }
 }
 
+void setMotor(int in1, int in2, int pwmPin, int speed) {
+  int power = constrain(abs(speed), 0, 255);
+  digitalWrite(in1, speed >= 0 ? HIGH : LOW);
+  digitalWrite(in2, speed >= 0 ? LOW : HIGH);
+  analogWrite(pwmPin, power);
+}
+
+void setDrive(int left, int right) {
+  setMotor(LEFT_MOTOR_IN1, LEFT_MOTOR_IN2, LEFT_MOTOR_PWM, left);
+  setMotor(RIGHT_MOTOR_IN1, RIGHT_MOTOR_IN2, RIGHT_MOTOR_PWM, right);
+}
+
+void stopDrive() {
+  analogWrite(LEFT_MOTOR_PWM, 0);
+  analogWrite(RIGHT_MOTOR_PWM, 0);
+}
+
+bool playLocomotion(const char* name) {
+  if (strcmp(name, "forward") == 0) setDrive(190, 190);
+  else if (strcmp(name, "backward") == 0) setDrive(-190, -190);
+  else if (strcmp(name, "turn_left") == 0) setDrive(-170, 170);
+  else if (strcmp(name, "turn_right") == 0) setDrive(170, -170);
+  else if (strcmp(name, "turn_around") == 0) setDrive(180, -180);
+  else return false;
+  vTaskDelay(pdMS_TO_TICKS(strcmp(name, "turn_around") == 0 ? 1200 : 700));
+  stopDrive();
+  return true;
+}
+
+void addCloudHeaders(HTTPClient& http) {
+  if (strlen(ROBOT_API_TOKEN) > 0) {
+    http.addHeader("Authorization", String("Bearer ") + ROBOT_API_TOKEN);
+  }
+}
+
+void acknowledgeCommand(const CommandRequest& req) {
+  HTTPClient http;
+  String endpoint = strcmp(req.kind, "motion") == 0 ? "/ack_motion" : "/ack_locomotion";
+  http.begin(String(CLOUD_BASE_URL) + endpoint);
+  addCloudHeaders(http);
+  http.addHeader("Content-Type", "application/json");
+  String payload = String("{\"robot_id\":\"") + ROBOT_ID + "\",\"id\":\"" + req.id + "\"}";
+  http.POST(payload);
+  http.end();
+}
+
 // ---------------------------------------------------------------------------
 // Core 1 task: owns all servo bus timing, isolated from WiFi/HTTP on core 0.
 // ---------------------------------------------------------------------------
 void motionTask(void* pvParameters) {
-  GestureRequest req;
+  CommandRequest req;
   for (;;) {
-    if (xQueueReceive(gestureQueue, &req, portMAX_DELAY) == pdTRUE) {
-      if (strcmp(req.name, "wave_right") == 0) {
-        playKeyframeSequence(GESTURE_WAVE_RIGHT, sizeof(GESTURE_WAVE_RIGHT) / sizeof(Keyframe));
-      } else if (strcmp(req.name, "wave_both") == 0) {
-        playKeyframeSequence(GESTURE_WAVE_BOTH, sizeof(GESTURE_WAVE_BOTH) / sizeof(Keyframe));
-      } else if (strcmp(req.name, "bow") == 0) {
-        playKeyframeSequence(GESTURE_BOW, sizeof(GESTURE_BOW) / sizeof(Keyframe));
-      } else if (strcmp(req.name, "shrug") == 0) {
-        playKeyframeSequence(GESTURE_SHRUG, sizeof(GESTURE_SHRUG) / sizeof(Keyframe));
-      } else if (strcmp(req.name, "point") == 0) {
-        playKeyframeSequence(GESTURE_POINT, sizeof(GESTURE_POINT) / sizeof(Keyframe));
-      } else if (strcmp(req.name, "full_dance") == 0) {
-        playKeyframeSequence(GESTURE_FULL_DANCE, sizeof(GESTURE_FULL_DANCE) / sizeof(Keyframe));
-      } else if (strcmp(req.name, "sit") == 0) {
-        playKeyframeSequence(GESTURE_SIT, sizeof(GESTURE_SIT) / sizeof(Keyframe));
-      }
+    if (xQueueReceive(gestureQueue, &req, portMAX_DELAY) != pdTRUE) continue;
+
+    bool completed = false;
+    if (strcmp(req.kind, "locomotion") == 0) {
+      completed = playLocomotion(req.name);
+    } else if (strcmp(req.name, "wave_right") == 0) {
+      playKeyframeSequence(GESTURE_WAVE_RIGHT, sizeof(GESTURE_WAVE_RIGHT) / sizeof(Keyframe));
+      completed = true;
+    } else if (strcmp(req.name, "wave_both") == 0) {
+      playKeyframeSequence(GESTURE_WAVE_BOTH, sizeof(GESTURE_WAVE_BOTH) / sizeof(Keyframe));
+      completed = true;
+    } else if (strcmp(req.name, "bow") == 0) {
+      playKeyframeSequence(GESTURE_BOW, sizeof(GESTURE_BOW) / sizeof(Keyframe));
+      completed = true;
+    } else if (strcmp(req.name, "shrug") == 0) {
+      playKeyframeSequence(GESTURE_SHRUG, sizeof(GESTURE_SHRUG) / sizeof(Keyframe));
+      completed = true;
+    } else if (strcmp(req.name, "point") == 0) {
+      playKeyframeSequence(GESTURE_POINT, sizeof(GESTURE_POINT) / sizeof(Keyframe));
+      completed = true;
+    } else if (strcmp(req.name, "full_dance") == 0) {
+      playKeyframeSequence(GESTURE_FULL_DANCE, sizeof(GESTURE_FULL_DANCE) / sizeof(Keyframe));
+      completed = true;
+    } else if (strcmp(req.name, "sit") == 0) {
+      playKeyframeSequence(GESTURE_SIT, sizeof(GESTURE_SIT) / sizeof(Keyframe));
+      completed = true;
     }
+
+    // ACK only after a recognized command completes. Unknown commands remain
+    // pending for inspection instead of being silently discarded.
+    if (completed) acknowledgeCommand(req);
   }
 }
 
 // ---------------------------------------------------------------------------
 // Core 0: WiFi + polling loop
 // ---------------------------------------------------------------------------
-void pollCloudForCommand() {
-  // Polls /next_motion frequently — this endpoint only ever holds a
-  // gesture name and is never blocked by the cloud function's LLM call,
-  // since the cloud side enqueues motion before calling the model.
+void pollQueue(const char* endpoint, const char* valueKey, const char* kind) {
   HTTPClient http;
-  http.begin(String(CLOUD_BASE_URL) + "/next_motion");
+  String url = String(CLOUD_BASE_URL) + endpoint + "?robot_id=" + ROBOT_ID;
+  http.begin(url);
+  addCloudHeaders(http);
   int code = http.GET();
   if (code == 200) {
-    String body = http.getString();
     StaticJsonDocument<512> doc;
-    if (deserializeJson(doc, body) == DeserializationError::Ok) {
-      if (doc["pending"] == true) {
-        String gesture = doc["gesture"].as<String>();
-        String cmdId = doc["id"].as<String>();
+    if (deserializeJson(doc, http.getString()) == DeserializationError::Ok
+        && doc["pending"] == true) {
+      CommandRequest req = {};
+      String value = doc[valueKey].as<String>();
+      String id = doc["id"].as<String>();
+      String(kind).toCharArray(req.kind, sizeof(req.kind));
+      value.toCharArray(req.name, sizeof(req.name));
+      id.toCharArray(req.id, sizeof(req.id));
 
-        if (gesture.length() > 0) {
-          GestureRequest req;
-          gesture.toCharArray(req.name, sizeof(req.name));
-          xQueueSend(gestureQueue, &req, 0);
-        }
-
-        HTTPClient ackHttp;
-        ackHttp.begin(String(CLOUD_BASE_URL) + "/ack_motion");
-        ackHttp.addHeader("Content-Type", "application/json");
-        String payload = "{\"id\":\"" + cmdId + "\"}";
-        ackHttp.POST(payload);
-        ackHttp.end();
-      }
+      // Do not ACK when the local queue is full. The cloud will return the
+      // same pending item on the next poll, providing at-least-once delivery.
+      xQueueSend(gestureQueue, &req, 0);
     }
   }
   http.end();
+}
 
-  // Reply text isn't needed on this board (no speaker/display attached
-  // yet) but /next_reply + /ack_reply exist on the cloud function for
-  // whenever TTS or a status display is added — poll less often than
-  // motion since it's not time-critical.
+void pollCloudForCommand() {
+  pollQueue("/next_motion", "gesture", "motion");
+  pollQueue("/next_locomotion", "locomotion", "locomotion");
 }
 
 void setup() {
@@ -225,8 +290,16 @@ void setup() {
   }
   Serial.println("\nWiFi connected: " + WiFi.localIP().toString());
 
+  pinMode(LEFT_MOTOR_IN1, OUTPUT);
+  pinMode(LEFT_MOTOR_IN2, OUTPUT);
+  pinMode(LEFT_MOTOR_PWM, OUTPUT);
+  pinMode(RIGHT_MOTOR_IN1, OUTPUT);
+  pinMode(RIGHT_MOTOR_IN2, OUTPUT);
+  pinMode(RIGHT_MOTOR_PWM, OUTPUT);
+  stopDrive();
+
   busMutex = xSemaphoreCreateMutex();
-  gestureQueue = xQueueCreate(4, sizeof(GestureRequest));
+  gestureQueue = xQueueCreate(8, sizeof(CommandRequest));
 
   xTaskCreatePinnedToCore(motionTask, "MotionTask", 4096, NULL, 2, NULL, 1);
 }
