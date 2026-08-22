@@ -161,6 +161,34 @@ Keyframe GESTURE_FINGER_GUNS[] = {
   {{90, 90, 90, 90}, 500},
 };
 
+
+Keyframe GESTURE_AURA_FARM[] = {
+  {{115, 70, 70, 115}, 550}, {{70, 115, 115, 70}, 550},
+  {{125, 80, 125, 80}, 700}, {{90, 90, 90, 90}, 500},
+};
+Keyframe GESTURE_SIX_SEVEN[] = {
+  {{75, 115, 115, 75}, 300}, {{115, 75, 75, 115}, 300},
+  {{75, 115, 115, 75}, 300}, {{115, 75, 75, 115}, 300},
+  {{90, 90, 90, 90}, 400},
+};
+Keyframe GESTURE_NPC_MODE[] = {
+  {{120, 60, 120, 60}, 180}, {{105, 85, 105, 85}, 180},
+  {{120, 60, 120, 60}, 180}, {{105, 85, 105, 85}, 180},
+  {{90, 90, 90, 90}, 400},
+};
+Keyframe GESTURE_FACEPALM[] = {
+  {{125, 35, 90, 90}, 550}, {{125, 35, 90, 90}, 650},
+  {{90, 90, 90, 90}, 550},
+};
+Keyframe GESTURE_SUCCESS_PUMP[] = {
+  {{145, 45, 90, 90}, 250}, {{120, 70, 90, 90}, 180},
+  {{145, 45, 90, 90}, 300}, {{90, 90, 90, 90}, 450},
+};
+Keyframe GESTURE_SIDE_EYE[] = {
+  {{125, 55, 80, 105}, 450}, {{125, 55, 80, 105}, 700},
+  {{90, 90, 90, 90}, 500},
+};
+
 volatile int currentAngles[NUM_SERVOS] = {90, 90, 90, 90};
 SemaphoreHandle_t busMutex;
 QueueHandle_t gestureQueue; // holds pointers to a small struct describing which gesture to play
@@ -304,6 +332,18 @@ void motionTask(void* pvParameters) {
         playKeyframeSequence(GESTURE_MIC_DROP, sizeof(GESTURE_MIC_DROP) / sizeof(Keyframe));
       } else if (strcmp(req.name, "finger_guns") == 0) {
         playKeyframeSequence(GESTURE_FINGER_GUNS, sizeof(GESTURE_FINGER_GUNS) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "aura_farm") == 0) {
+        playKeyframeSequence(GESTURE_AURA_FARM, sizeof(GESTURE_AURA_FARM) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "six_seven") == 0) {
+        playKeyframeSequence(GESTURE_SIX_SEVEN, sizeof(GESTURE_SIX_SEVEN) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "npc_mode") == 0) {
+        playKeyframeSequence(GESTURE_NPC_MODE, sizeof(GESTURE_NPC_MODE) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "facepalm") == 0) {
+        playKeyframeSequence(GESTURE_FACEPALM, sizeof(GESTURE_FACEPALM) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "success_pump") == 0) {
+        playKeyframeSequence(GESTURE_SUCCESS_PUMP, sizeof(GESTURE_SUCCESS_PUMP) / sizeof(Keyframe));
+      } else if (strcmp(req.name, "side_eye") == 0) {
+        playKeyframeSequence(GESTURE_SIDE_EYE, sizeof(GESTURE_SIDE_EYE) / sizeof(Keyframe));
       }
     }
   }
