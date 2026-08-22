@@ -5,6 +5,13 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Changed
+- Renamed `docs/dashboard.html` → `docs/index.html`. GitHub Pages (repo
+  → Settings → Pages → Source: branch `main`, folder `/docs`) serves
+  whatever's in `docs/` and specifically looks for `index.html` as the
+  site's default page — without this rename, the Pages URL 404'd at its
+  root and only worked if you knew to append `/dashboard.html`.
+
 ### Added
 - 4 more song-tempo dance routines in `rig_gestures.py`: `dance_jaiho`
   (A.R. Rahman, Bollywood), `dance_everybody` (Backstreet Boys),

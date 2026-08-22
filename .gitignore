@@ -4,3 +4,10 @@ robot_memory.txt
 run_history.json
 venv/
 .env
+
+# Node/Vite build artifacts (app/ dashboard) — package-lock.json IS
+# meant to be committed, just not these generated/dependency dirs.
+node_modules/
+.next/
+.vinext/
+.wrangler/

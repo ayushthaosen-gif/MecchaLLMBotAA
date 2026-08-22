@@ -96,13 +96,23 @@ gcloud firestore databases create --location=nam5   # or your preferred region
 No manual collection/schema creation needed — `firestore_memory.py`
 creates the `meccanoid_memory` collection on first write.
 
-## Dashboard hosting (Firebase Hosting)
+## Dashboard hosting
 
-`docs/dashboard.html` is a static page with no build step — set its
-"Link configuration" panel to your deployed `/chat` URL and it talks
-directly to the cloud function (see `simulate_full_run.py`'s "How the
-pieces connect" diagram above). Firebase Hosting is a natural fit since
-you're likely already using a Firebase project for Firestore:
+`docs/index.html` is a static page with no build step — set its "Link
+configuration" panel to your deployed `/chat` URL and it talks directly
+to the cloud function (see `simulate_full_run.py`'s "How the pieces
+connect" diagram above). No local server needed for hosting it — either
+option below serves the static file directly:
+
+**GitHub Pages** (simplest, no extra account/CLI needed): repo →
+Settings → Pages → Source: "Deploy from a branch" → Branch: `main`,
+folder: `/docs` → Save. Live at
+`https://<your-username>.github.io/<repo-name>/` within a minute or two
+of pushing — GitHub Pages looks for `index.html` as that URL's default
+page, which is why the dashboard is named that and not `dashboard.html`.
+
+**Firebase Hosting** — a natural fit if you're already using a Firebase
+project for Firestore:
 
 ```bash
 npm install -g firebase-tools
@@ -111,9 +121,9 @@ firebase init hosting     # public directory: docs
 firebase deploy --only hosting
 ```
 
-That gives the dashboard a stable `https://your-project.web.app` URL to
-open from a phone — the endpoint field is saved in the browser's
-`localStorage`, so it only needs to be set once per device.
+Either way you get a stable URL to open from a phone — the endpoint
+field is saved in the browser's `localStorage`, so it only needs to be
+set once per device.
 
 ## Gemini 2.5 setup
 

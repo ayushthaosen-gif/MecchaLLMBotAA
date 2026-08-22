@@ -154,12 +154,12 @@ esp32-cloud-version/    Cloud function brain + ESP32 firmware, no Pi
   simulate_full_run.py, full_system_test.py, test_*.py, demo_*.py
 
 standalone-tools/       Shared eye-display and echo-cancellation demos
-docs/                   docs/dashboard.html (static control console), BOM
+docs/                   docs/index.html (static control console), BOM
                         calculator, pinouts, project-summary.md (full build history)
 app/, worker/, .openai/ A separate deployable public dashboard (Next.js/
                         React on Cloudflare Workers via OpenAI Sites
                         tooling) — an alternate frontend to the same
-                        `/chat` endpoint as docs/dashboard.html
+                        `/chat` endpoint as docs/index.html
 
 test_everything.py      Fast, dependency-free logic smoke test
 test_real_modules.py    Regression suite against the actual production
@@ -189,11 +189,21 @@ run everything in simulation before touching real hardware.
 Two separate frontends exist, both talking to the same `/chat`-shaped
 backend — pick whichever fits how you want to host it:
 
-- **`docs/dashboard.html`** — a single static file, no build step, no
-  dependencies. Open it directly or host it anywhere that serves static
+- **`docs/index.html`** — a single static file, no build step, no
+  dependencies. Open it directly, or host it anywhere that serves static
   files (Firebase Hosting, GitHub Pages, etc. — see
   `esp32-cloud-version/README.md`). Link settings persist in
   `localStorage`.
+
+  **GitHub Pages setup** (no local server involved): repo → Settings →
+  Pages → Source: "Deploy from a branch" → Branch: `main`, folder:
+  `/docs` → Save. GitHub Pages serves whatever's in `docs/` at
+  `https://<your-username>.github.io/<repo-name>/`, and specifically
+  looks for `index.html` as that URL's default page — which is exactly
+  why the dashboard lives at `docs/index.html` and not
+  `docs/dashboard.html`. No build step, no server to run or keep
+  alive — GitHub hosts the static file directly. After enabling it,
+  changes land live within a minute or two of pushing to `main`.
 - **`app/`** — a Next.js/React app built with `vinext`/Vite, deployed to
   Cloudflare Workers via `worker/index.ts` and OpenAI's Sites tooling
   (`.openai/hosting.json`). Same functionality (gesture buttons, chat,
