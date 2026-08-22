@@ -350,6 +350,64 @@ KEYWORD_TRIGGERS["dance_ekpal"] = [
 ]
 
 # ---------------------------------------------------------------------------
+# More song-synced routines — same approach as above: ORIGINAL choreography
+# (not reproducing any official video's specific moves or any lyrics),
+# timed to each real song's tempo.
+#
+#   "Jai Ho" (A.R. Rahman)                      — 105 BPM -> beat = 0.571s
+#   "Everybody (Backstreet's Back)" (BSB)        — 131 BPM -> beat = 0.458s
+#   "YMCA" (Village People)                      — 127 BPM -> beat = 0.472s
+#   "Waka Waka (This Time for Africa)" (Shakira) — 100 BPM -> beat = 0.600s
+# ---------------------------------------------------------------------------
+
+BEAT_JAIHO = 60 / 105
+BEAT_EVERYBODY = 60 / 131
+BEAT_YMCA = 60 / 127
+BEAT_WAKAWAKA = 60 / 100
+
+GESTURES["dance_jaiho"] = [
+    # big triumphant sweeps alternating side to side
+    ({"right_shoulder": 130, "right_elbow": 60, "left_shoulder": 50, "left_elbow": 120}, BEAT_JAIHO),
+    ({"right_shoulder": 50, "right_elbow": 120, "left_shoulder": 130, "left_elbow": 60}, BEAT_JAIHO),
+    ({"right_shoulder": 130, "right_elbow": 60, "left_shoulder": 50, "left_elbow": 120}, BEAT_JAIHO),
+    ({"right_shoulder": 50, "right_elbow": 120, "left_shoulder": 130, "left_elbow": 60}, BEAT_JAIHO),
+    # victory arms-up hit, held for the anthem's big chorus moment
+    ({"right_shoulder": 165, "right_elbow": 150, "left_shoulder": 165, "left_elbow": 150}, BEAT_JAIHO * 3),
+    (REST_POSE, BEAT_JAIHO),
+]
+
+GESTURES["dance_everybody"] = [
+    # fast punchy alternating pumps — snappier tempo than dance_iwitw
+    ({"right_shoulder": 145, "right_elbow": 60, "left_shoulder": 90, "left_elbow": 90}, BEAT_EVERYBODY),
+    ({"right_shoulder": 90, "right_elbow": 90, "left_shoulder": 145, "left_elbow": 60}, BEAT_EVERYBODY),
+    ({"right_shoulder": 145, "right_elbow": 60, "left_shoulder": 90, "left_elbow": 90}, BEAT_EVERYBODY),
+    ({"right_shoulder": 90, "right_elbow": 90, "left_shoulder": 145, "left_elbow": 60}, BEAT_EVERYBODY),
+    ({"right_shoulder": 145, "right_elbow": 60, "left_shoulder": 90, "left_elbow": 90}, BEAT_EVERYBODY),
+    ({"right_shoulder": 90, "right_elbow": 90, "left_shoulder": 145, "left_elbow": 60}, BEAT_EVERYBODY),
+    # both-arm punch on the big hit
+    ({"right_shoulder": 160, "right_elbow": 40, "left_shoulder": 160, "left_elbow": 40}, BEAT_EVERYBODY * 2),
+    (REST_POSE, BEAT_EVERYBODY),
+]
+
+# YMCA — arm-shape letters held for a couple beats each, a rare case where
+# this robot's 2-DOF arms are a genuinely good fit for the source material
+# rather than an approximation of something it can't really do.
+GESTURES["dance_ymca"] = [
+    ({"right_shoulder": 160, "right_elbow": 150, "left_shoulder": 160, "left_elbow": 150}, BEAT_YMCA * 2),  # Y
+    (REST_POSE, BEAT_YMCA * 0.5),
+    ({"right_shoulder": 170, "right_elbow": 50, "left_shoulder": 170, "left_elbow": 50}, BEAT_YMCA * 2),   # M
+    (REST_POSE, BEAT_YMCA * 0.5),
+    ({"right_shoulder": 60, "right_elbow": 130, "left_shoulder": 120, "left_elbow": 60}, BEAT_YMCA * 2),   # C
+    (REST_POSE, BEAT_YMCA * 0.5),
+    ({"right_shoulder": 60, "right_elbow": 150, "left_shoulder": 60, "left_elbow": 150}, BEAT_YMCA * 2),   # A
+    (REST_POSE, BEAT_YMCA),
+]
+
+KEYWORD_TRIGGERS["dance_jaiho"] = ["jai ho", "dance to jai ho", "slumdog millionaire dance"]
+KEYWORD_TRIGGERS["dance_everybody"] = ["backstreet's back", "everybody backstreet", "dance to everybody"]
+KEYWORD_TRIGGERS["dance_ymca"] = ["ymca", "dance the ymca", "village people"]
+
+# ---------------------------------------------------------------------------
 # Macarena — 103 BPM. Unlike the other two song routines, this one combines
 # arms AND wheels: the famous hip-wiggle and end-of-cycle turn have no arm
 # equivalent, so they're approximated with locomotion instead of skipped.
@@ -399,3 +457,29 @@ def build_macarena_cycle():
     module-level list only) so the docstring above travels with it in
     tooling that introspects functions."""
     return MACARENA_ROUTINE
+
+
+# Waka Waka — like the Macarena, this song is hip-centric and this robot
+# has no hip joint, so (same honest tradeoff as the Macarena routine above)
+# the hip movement is approximated with the wheels, not skipped. Kept as
+# its own MacarenaStep-style 3-tuple routine, not a plain Gesture — see
+# build_wakawaka_cycle().
+WAKAWAKA_ROUTINE: List[MacarenaStep] = [
+    ({"right_shoulder": 120, "right_elbow": 110, "left_shoulder": 60, "left_elbow": 70}, BEAT_WAKAWAKA, None),
+    ({"right_shoulder": 60, "right_elbow": 70, "left_shoulder": 120, "left_elbow": 110}, BEAT_WAKAWAKA, None),
+    (REST_POSE, BEAT_WAKAWAKA, "wiggle"),
+    ({"right_shoulder": 120, "right_elbow": 110, "left_shoulder": 60, "left_elbow": 70}, BEAT_WAKAWAKA, None),
+    ({"right_shoulder": 60, "right_elbow": 70, "left_shoulder": 120, "left_elbow": 110}, BEAT_WAKAWAKA, None),
+    (REST_POSE, BEAT_WAKAWAKA, "wiggle"),
+    # arms-up celebratory finish
+    ({"right_shoulder": 160, "right_elbow": 140, "left_shoulder": 160, "left_elbow": 140}, BEAT_WAKAWAKA * 2, None),
+    (REST_POSE, BEAT_WAKAWAKA, None),
+]
+
+CHAIN_TRIGGERS["wakawaka"] = ["waka waka", "shakira dance", "this time for africa"]
+
+
+def build_wakawaka_cycle():
+    """Same pattern as build_macarena_cycle() — kept as a function so the
+    docstring above travels with it in tooling that introspects functions."""
+    return WAKAWAKA_ROUTINE

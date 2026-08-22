@@ -50,6 +50,24 @@ noise") and is now implemented.
 
 Locomotion triggers: `forward`, `backward`, `turn_left`, `turn_right`, `turn_around`
 
+## Song-tempo dance routines (rig_gestures.py)
+`dance_iwitw` (Backstreet Boys, 99 BPM), `dance_ekpal` (Lucky Ali,
+Bollywood, 104 BPM), `dance_jaiho` (A.R. Rahman, Bollywood, 105 BPM),
+`dance_everybody` (Backstreet Boys, 131 BPM), `dance_ymca` (Village
+People, 127 BPM — a rare case where the robot's 2-DOF arms are a
+genuinely good fit for the source material, not an approximation), and
+the `wakawaka` chain (Shakira, 100 BPM, arms + wheel-wiggle like the
+Macarena — same honest "no hip joint" tradeoff). All are ORIGINAL
+choreography timed to each song's real tempo, never a reproduction of
+the official video's actual moves or any lyrics.
+
+`tone_player.py` adds an optional beat-synced tone cue that can run
+alongside any of these — a fixed, song-independent 5-note arpeggio
+(not the real melody, which is itself copyrighted separately from any
+recording) that only changes tempo, never pitch content, to stay clearly
+on the right side of that line. Non-blocking, same pattern as
+motion_engine.py's gesture thread.
+
 ## Testing done (all passed, all in simulation — no real ESP32/Pi/cloud used)
 - `test_integration.py` (Pi version) — Flask + memory + gesture + weather, full request/response cycle
 - `demo_complex_movements.py` — all 7 gestures individually verified, joint-by-joint
@@ -58,11 +76,13 @@ Locomotion triggers: `forward`, `backward`, `turn_left`, `turn_right`, `turn_aro
 - `test_nonblocking_motion.py` — proved gesture visible in queue ~1s before a simulated 1s-latency LLM call returns
 - `full_system_test.py` — every feature in one run: gestures, locomotion, combined non-blocking commands, weather, hybrid filler timing, backend swap
 - Locomotion turn-type test — confirmed rotate/arc/pivot produce kinematically distinct displacement/heading signatures
+- `test_song_dances.py` — tempo accuracy, keyword matching, full playback timing, and the tone cue's non-blocking/song-independence guarantees for all 6 song-tempo routines
 
 ## What's NOT yet tested / open items
 - No real hardware has touched any of this — everything is `simulate=True` mocked I/O
 - The dead-reckoning locomotion numbers (wheelbase, max speed) are estimates, not measured
 - Voice I/O, camera/vision, and autonomy loop were discussed but not built
+- `threading.Event.wait()` (used for interruptible gesture playback, see "Make rig motion shutdown interruptible" in git history) measured ~30% more per-call overhead than plain `time.sleep()` on this project's dev environment — real-time tempo accuracy on real hardware should be re-measured, since this sandbox's numbers may not transfer
 - BOM/cost calculator built for robu.in (India) parts — logic analyzer originally listed as required is now understood to be unnecessary given the official protocol docs + existing libraries above
 
 ## Suggested simulation tests to run next

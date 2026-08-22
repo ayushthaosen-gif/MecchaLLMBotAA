@@ -6,6 +6,29 @@ this repo's `main` branch.
 ## [Unreleased]
 
 ### Added
+- 4 more song-tempo dance routines in `rig_gestures.py`: `dance_jaiho`
+  (A.R. Rahman, Bollywood), `dance_everybody` (Backstreet Boys),
+  `dance_ymca` (Village People), and a `wakawaka` chain (Shakira, arms +
+  wheel-wiggle like the Macarena). Same approach as the existing
+  `dance_iwitw`/`dance_ekpal`: original choreography, real BPM tempo,
+  never a reproduction of official moves or lyrics.
+- `tone_player.py` — an optional beat-synced tone cue that can run
+  alongside any dance. Deliberately plays a fixed, song-independent
+  5-note arpeggio (only tempo changes, never the notes) rather than any
+  real song's melody, since a melody is itself a copyrighted musical
+  composition separate from any given recording of it — "just play it in
+  tones" doesn't avoid that. Non-blocking, same pattern as
+  `motion_engine.py`'s gesture thread.
+- Found and fixed a stale test assumption: `test_song_dances.py`'s 15%
+  playback-drift tolerance predates "Make rig motion shutdown
+  interruptible" swapping `time.sleep()` for `threading.Event.wait()`
+  (so gesture playback can be cancelled mid-move) — `Event.wait()`
+  measured ~30% more per-call overhead than `sleep()` on this dev
+  environment, made the existing tolerance too tight, and had nothing to
+  do with the new dances that happened to be the first thing to exercise
+  it again. Tolerance widened to 45% with an explanatory comment.
+
+### Added (gestures)
 - 6 new dance/meme gestures — `dab`, `flex`, `floss`, `the_robot`,
   `mic_drop`, `finger_guns` — plus a `meme_routine` gesture chain
   (dab+flex+finger_guns), added to both gesture models
