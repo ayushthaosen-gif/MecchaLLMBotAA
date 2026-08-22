@@ -43,24 +43,27 @@ class MotionEngine:
         self._queue: "queue.Queue[str]" = queue.Queue()
         self._thread: Optional[threading.Thread] = None
         self._running = False
+        self._stop_event = threading.Event()
         self._busy = threading.Event()
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
         self._running = True
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._running = False
+        self._stop_event.set()
         self._queue.put("__STOP__")
         if self._thread:
             self._thread.join(timeout=2)
 
     def play(self, gesture_name: str) -> bool:
         """Queue a gesture by name. Returns False if the name is unknown."""
-        if gesture_name not in GESTURES and gesture_name != "__STOP__":
+        if not self._running or gesture_name not in GESTURES:
             return False
         self._queue.put(gesture_name)
         return True
@@ -91,6 +94,8 @@ class MotionEngine:
 
     def _run_gesture(self, gesture_name: str) -> None:
         for angles, hold_seconds in GESTURES[gesture_name]:
+            if self._stop_event.is_set():
+                return
             self._move_to(angles, hold_seconds)
 
     def _move_to(self, target_angles: dict, hold_seconds: float) -> None:
@@ -109,13 +114,16 @@ class MotionEngine:
 
         steps = max(int(duration / self.STEP_INTERVAL), 1)
         for step in range(1, steps + 1):
+            if self._stop_event.is_set():
+                return
             t = _ease_in_out(step / steps)
             frame = {
                 sid: round(start_angles[sid] + (target_angles[sid] - start_angles[sid]) * t)
                 for sid in target_angles
             }
             self.bus.set_angles(frame)
-            time.sleep(self.STEP_INTERVAL)
+            if self._stop_event.wait(self.STEP_INTERVAL):
+                return
 
 
 # ---------------------------------------------------------------------------
