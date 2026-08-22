@@ -115,6 +115,16 @@ GESTURES: Dict[str, Gesture] = {
     ],
 }
 
+# Modern reaction/meme poses. These stay inside the same conservative
+# 15-165 degree envelope as the older routines.
+GESTURES.update({
+    "aura_farm": [({0: 145, 1: 55, 2: 145, 3: 55}, 0.7), ({0: 155, 1: 75, 2: 155, 3: 75}, 0.7), (REST, 0.5)],
+    "six_seven": [({0: 65, 1: 105, 2: 115, 3: 75}, 0.35), ({0: 115, 1: 75, 2: 65, 3: 105}, 0.35), (REST, 0.4)],
+    "npc_mode": [({0: 90, 1: 75, 2: 90, 3: 105}, 0.45), ({0: 100, 1: 85, 2: 80, 3: 95}, 0.45), (REST, 0.4)],
+    "facepalm": [({0: 125, 1: 35, 2: 90, 3: 90}, 0.55), ({0: 125, 1: 35, 2: 90, 3: 90}, 0.65), (REST, 0.5)],
+    "success_pump": [({0: 150, 1: 45, 2: 150, 3: 45}, 0.35), ({0: 125, 1: 70, 2: 125, 3: 70}, 0.2), ({0: 150, 1: 45, 2: 150, 3: 45}, 0.35), (REST, 0.5)],
+    "side_eye": [({0: 80, 1: 100, 2: 105, 3: 70}, 0.45), ({0: 80, 1: 100, 2: 105, 3: 70}, 0.7), (REST, 0.45)],
+})
 # Keyword triggers — kept here for standalone use of this module, though
 # cloud_function/main.py has its own copy of this logic for the ESP32-cloud
 # architecture. Same specificity fix as rig_gestures.py: longest match wins.
@@ -132,6 +142,12 @@ KEYWORD_TRIGGERS = {
     "the_robot": ["do the robot", "robot dance"],
     "mic_drop": ["mic drop", "drop the mic"],
     "finger_guns": ["finger guns", "pew pew"],
+    "aura_farm": ["aura farm", "farm aura", "maximum aura"],
+    "six_seven": ["six seven gesture", "67 gesture", "do six seven"],
+    "npc_mode": ["npc mode", "act like an npc", "yes yes npc"],
+    "facepalm": ["facepalm", "bruh moment"],
+    "success_pump": ["success pose", "victory pump", "big win"],
+    "side_eye": ["side eye", "suspicious look", "really bro"],
 }
 
 

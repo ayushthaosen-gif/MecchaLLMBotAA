@@ -47,6 +47,22 @@ MOOD_COLORS = {
 FADE_INSTANT = 0
 FADE_SLOW = 6
 
+# Color/fade/lease seconds. A short lease prevents normal status updates
+# from immediately erasing the gesture-linked eye cue.
+GESTURE_EYE_CUES = {
+    "dab": ((3, 3, 3), 0, 1.5),
+    "flex": ((7, 5, 0), 0, 1.8),
+    "floss": ((7, 0, 5), 0, 2.0),
+    "the_robot": ((0, 6, 7), 0, 2.0),
+    "mic_drop": ((6, 6, 6), 0, 1.7),
+    "finger_guns": ((0, 7, 7), 0, 1.4),
+    "aura_farm": ((5, 0, 7), 6, 2.0),
+    "six_seven": ((0, 7, 7), 0, 1.5),
+    "npc_mode": ((0, 6, 1), 0, 1.6),
+    "facepalm": ((7, 0, 0), 0, 1.7),
+    "success_pump": ((7, 5, 0), 0, 1.6),
+    "side_eye": ((7, 2, 0), 0, 1.7),
+}
 
 class EyeModule:
     """Simulated LED module — no hardware, prints [SIM/eyes] like the
@@ -57,6 +73,7 @@ class EyeModule:
         self.current_color: Tuple[int, int, int] = (0, 0, 0)
         self.history = []
         self._t0 = time.perf_counter()
+        self._gesture_cue_until = 0.0
 
     def set_color(self, r: int, g: int, b: int, fade: int = FADE_INSTANT):
         r, g, b, fade = (max(0, min(7, v)) for v in (r, g, b, fade))
@@ -66,12 +83,28 @@ class EyeModule:
         if self.simulate:
             print(f"[SIM/eyes] t={elapsed:.3f}s color=({r},{g},{b}) fade={fade}")
 
+    def _cue_active(self) -> bool:
+        return time.perf_counter() < self._gesture_cue_until
+
+    def set_gesture_cue(self, gesture: str) -> Optional[str]:
+        cue = GESTURE_EYE_CUES.get(gesture)
+        if cue is None:
+            return None
+        color, fade, lease_s = cue
+        self.set_color(*color, fade=fade)
+        self._gesture_cue_until = time.perf_counter() + lease_s
+        return gesture
+
     def set_status(self, status: str, fade: int = FADE_INSTANT):
         if status not in STATUS_COLORS:
             raise ValueError(f"unknown status {status!r} — use one of {list(STATUS_COLORS)}")
+        if self._cue_active() and status != "error":
+            return
         self.set_color(*STATUS_COLORS[status], fade=fade)
 
     def set_mood(self, mood: str, fade: int = FADE_SLOW):
+        if self._cue_active():
+            return
         if mood not in MOOD_COLORS:
             mood = "neutral"
         self.set_color(*MOOD_COLORS[mood], fade=fade)

@@ -30,6 +30,7 @@ from servo_controller import ServoBus, ServoBusConfig
 from motion_engine import MotionEngine
 from gestures import match_gesture_from_text
 from llm_backend import build_llm_backend
+from mirror_control import MirrorController
 
 # ---------------------------------------------------------------------------
 # Config
@@ -41,12 +42,15 @@ DASHBOARD_TOKEN = os.environ.get("DASHBOARD_TOKEN")  # if set, /chat requires it
 MEMORY_FILE = Path(os.environ.get("MEMORY_FILE", "robot_memory.txt"))
 SIMULATE_SERVOS = os.environ.get("SIMULATE_SERVOS", "1") != "0"
 WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")  # e.g. "40.71,-74.01"
+ENABLE_MIRROR_CONTROL = os.environ.get("ENABLE_MIRROR_CONTROL", "0") == "1"
+MIRROR_ALLOWED_ORIGIN = os.environ.get("MIRROR_ALLOWED_ORIGIN", "")
 
 llm = build_llm_backend(LLM_BACKEND)
 
 bus = ServoBus(ServoBusConfig(simulate=SIMULATE_SERVOS, servo_count=4))
 motion = MotionEngine(bus)
 motion.start()
+mirror = MirrorController(bus) if ENABLE_MIRROR_CONTROL else None
 
 app = Flask(__name__)
 
@@ -142,6 +146,8 @@ def chat():
     # Fire a physical gesture in the background — non-blocking, so it plays
     # while we wait on the Claude API call below.
     gesture = match_gesture_from_text(message)
+    if gesture and mirror and mirror.active:
+        gesture = None  # direct pose control owns the arm bus until its dead-man fires
     if gesture:
         motion.play(gesture)
 
@@ -170,6 +176,34 @@ def chat():
         "tool_used": bool(tool_context),
     })
 
+@app.after_request
+def mirror_cors(response):
+    if request.path == "/mirror_pose" and MIRROR_ALLOWED_ORIGIN:
+        response.headers["Access-Control-Allow-Origin"] = MIRROR_ALLOWED_ORIGIN
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
+@app.route("/mirror_pose", methods=["POST", "OPTIONS"])
+def mirror_pose():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    if mirror is None:
+        return jsonify({"error": "mirror control disabled"}), 503
+    if not DASHBOARD_TOKEN:
+        return jsonify({"error": "DASHBOARD_TOKEN is required for mirror control"}), 503
+    if request.headers.get("Authorization", "") != f"Bearer {DASHBOARD_TOKEN}":
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        applied = mirror.apply(body.get("pose"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if applied is None:
+        return jsonify({"error": "pose updates are limited to 20 Hz"}), 429
+    return jsonify({"applied": applied})
 
 @app.route("/status", methods=["GET"])
 def status():
@@ -177,6 +211,7 @@ def status():
         "busy": motion.is_busy,
         "servo_count": bus.config.servo_count,
         "simulated": bus.config.simulate,
+        "mirror_enabled": mirror is not None,
     })
 
 

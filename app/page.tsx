@@ -1,7 +1,7 @@
 "use client";
 import {FormEvent,useEffect,useState} from "react";
 const actions=[["Wave","wave hello"],["Wave both","wave with both arms"],["Bow","take a bow"],["Shrug","shrug"],["Point","point over there"],["Dance","let's dance"],["Sit / rest","sit down and rest"]];
-const memeActions=[["Dab","dab"],["Flex","flex"],["Floss","floss"],["The Robot","do the robot"],["Mic drop","mic drop"],["Finger guns","finger guns"]];
+const memeActions=[["Dab","dab"],["Flex","flex"],["Floss","floss"],["The Robot","do the robot"],["Mic drop","mic drop"],["Finger guns","finger guns"],["Aura farm","aura farm"],["Six seven","six seven gesture"],["NPC mode","npc mode"],["Facepalm","facepalm"],["Victory pump","victory pump"],["Side eye","side eye"]];
 type Line={who:"you"|"bot";text:string};
 function getSessionId(){let id=localStorage.getItem("meccanoid.session");if(!id){id=crypto.randomUUID();localStorage.setItem("meccanoid.session",id)}return id}
 async function saveEvent(kind:"chat"|"command"|"error",role:"you"|"bot"|"system",message:string,latencyMs?:number){try{await fetch("/api/events",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:getSessionId(),kind,role,message,latencyMs})})}catch{/* Robot control must keep working if history storage is temporarily unavailable. */}}
@@ -20,6 +20,7 @@ export default function Home(){
  <section className="telemetry"><div><small>MODE</small><b>{endpoint?"LIVE":"DEMO"}</b></div><div><small>LATENCY</small><b>{latency}</b></div><div><small>SERVOS</small><b>4 / 4</b></div></section>
  <section className="panel"><h2>Motor actions</h2><div className="actions">{actions.map(([l,p])=><button key={l} disabled={busy} onClick={()=>void send(p,"command")}><i/>{l}</button>)}</div></section>
  <section className="panel"><h2>Dance / meme moves</h2><div className="actions">{memeActions.map(([l,p])=><button key={l} disabled={busy} onClick={()=>void send(p,"command")}><i/>{l}</button>)}</div></section>
+ <section className="panel mirror-callout"><h2>Camera control</h2><p>Use your phone or laptop camera to draw a wireframe and mirror your arm movements.</p><a href="/mirror">OPEN POSE MIRROR →</a></section>
  <section className="panel"><h2>Comms link</h2><div className="feed">{lines.map((l,i)=><p key={i} className={l.who}><b>{l.who==="you"?"YOU »":"BOT »"}</b> {l.text}</p>)}</div><form onSubmit={submit}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Say something to the robot…" aria-label="Message"/><button disabled={busy}>{busy?"WAIT":"SEND"}</button></form></section>
  <section className="panel"><h2>Link configuration</h2><label>Backend /chat endpoint<input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="https://your-backend.example.com/chat"/></label><label>Bearer token (optional)<input type="password" value={tokenDraft} onChange={e=>setTokenDraft(e.target.value)} placeholder="Stored only in this browser"/></label><button className="outline" onClick={save}>SAVE LINK SETTINGS</button><p className="note">No server keys are stored here. Link settings stay in this browser and are sent only to your endpoint.</p></section></main>
 }

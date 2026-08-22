@@ -291,3 +291,33 @@ based on published community work, credited here per their use:
   wiring, and backend configuration for each architecture
 - `pi-version/servo_controller.py`'s module docstring — the full
   byte-level/timing writeup of the real servo protocol
+
+## Camera pose mirror
+
+The dashboard's /mirror page can use a phone or laptop front camera to
+draw a MediaPipe pose wireframe and stream only four arm-joint angles to the
+Raspberry Pi architecture. Camera frames stay in the browser.
+
+On the Pi, set:
+
+~~~bash
+export ENABLE_MIRROR_CONTROL=1
+export DASHBOARD_TOKEN='use-a-long-random-secret'
+export MIRROR_ALLOWED_ORIGIN='https://your-dashboard-origin.example'
+python3 pi-version/brain.py
+~~~
+
+Then enter the Pi's HTTPS /mirror_pose URL and the same token on the mirror
+page. The controller accepts at most 20 updates per second, clamps angles to
+15-165 degrees, limits each update to 12 degrees, refuses control while a
+gesture is playing, and returns all arm joints to rest if updates stop for
+750 ms. Keep the robot clear of people and test in simulation first.
+
+This is arm-pose mirroring, not finger articulation: the current robot model
+has shoulder and elbow control but no finger motors. It also intentionally
+does not drive the wheels or perform person-following. The ESP32-cloud polling
+architecture is not used for live pose streaming because its current polling
+rate and single-chain firmware model are not suitable for safe real-time
+control. Likewise, the cloud eye cues are synchronized logical commands; real
+eye output still requires wiring the separate eye module and completing the
+documented two-arm-chain firmware work.

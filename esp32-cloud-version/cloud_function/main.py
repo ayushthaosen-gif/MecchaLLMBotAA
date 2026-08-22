@@ -181,6 +181,12 @@ KEYWORD_TRIGGERS = {
     "the_robot": ["do the robot", "robot dance"],
     "mic_drop": ["mic drop", "drop the mic"],
     "finger_guns": ["finger guns", "pew pew"],
+    "aura_farm": ["aura farm", "farm aura", "maximum aura"],
+    "six_seven": ["six seven gesture", "67 gesture", "do six seven"],
+    "npc_mode": ["npc mode", "act like an npc", "yes yes npc"],
+    "facepalm": ["facepalm", "bruh moment"],
+    "success_pump": ["success pose", "victory pump", "big win"],
+    "side_eye": ["side eye", "suspicious look", "really bro"],
 }
 
 # Locomotion is a SEPARATE hardware system from the arm servos — the 2
@@ -302,8 +308,11 @@ class RobotBrainService:
         # immediately, before the slow LLM call, so movement of either
         # kind never waits on the network/model.
         gesture = match_gesture(message)
+        eye_cue = None
         if gesture:
             self.motion_queue.enqueue(gesture)
+            if self.eyes:
+                eye_cue = self.eyes.set_gesture_cue(gesture)
 
         locomotion = match_locomotion(message)
         if locomotion:
@@ -325,11 +334,13 @@ class RobotBrainService:
         try:
             reply_text = self._call_llm(system_prompt, message)  # slow — network/model call
         except Exception as exc:
+            if self.eyes:
+                self.eyes.set_status("error")
             # Mirrors brain.py's error handling: don't leave the robot
             # having moved/turned but never having "spoken" — surface a
             # clear error instead of an unhandled 500 with no reply_queue
             # entry at all.
-            return {"error": f"LLM call failed: {exc}", "gesture": gesture, "locomotion": locomotion}
+            return {"error": f"LLM call failed: {exc}", "gesture": gesture, "locomotion": locomotion, "eye_cue": eye_cue}
 
         self.memory.append("robot", reply_text)
         self.reply_queue.enqueue(reply_text)
@@ -339,7 +350,7 @@ class RobotBrainService:
             self.eyes.set_mood(mood)
             self.eyes.set_status("speaking")
 
-        return {"reply": reply_text, "gesture": gesture, "locomotion": locomotion, "mood": mood}
+        return {"reply": reply_text, "gesture": gesture, "locomotion": locomotion, "mood": mood, "eye_cue": eye_cue}
 
     def _call_llm(self, system_prompt: str, message: str) -> str:
         if self._llm_client is not None:

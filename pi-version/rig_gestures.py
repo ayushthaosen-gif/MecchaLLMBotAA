@@ -175,6 +175,16 @@ GESTURES: Dict[str, Gesture] = {
     ],
 }
 
+# Modern reaction/meme poses. These stay inside the same conservative
+# 15-165 degree envelope as the older routines.
+GESTURES.update({
+    "aura_farm": [({"right_shoulder": 145, "right_elbow": 55, "left_shoulder": 145, "left_elbow": 55}, 0.7), ({"right_shoulder": 155, "right_elbow": 75, "left_shoulder": 155, "left_elbow": 75}, 0.7), (REST_POSE, 0.5)],
+    "six_seven": [({"right_shoulder": 65, "right_elbow": 105, "left_shoulder": 115, "left_elbow": 75}, 0.35), ({"right_shoulder": 115, "right_elbow": 75, "left_shoulder": 65, "left_elbow": 105}, 0.35), (REST_POSE, 0.4)],
+    "npc_mode": [({"right_shoulder": 90, "right_elbow": 75, "left_shoulder": 90, "left_elbow": 105}, 0.45), ({"right_shoulder": 100, "right_elbow": 85, "left_shoulder": 80, "left_elbow": 95}, 0.45), (REST_POSE, 0.4)],
+    "facepalm": [({"right_shoulder": 125, "right_elbow": 35, "left_shoulder": 90, "left_elbow": 90}, 0.55), ({"right_shoulder": 125, "right_elbow": 35, "left_shoulder": 90, "left_elbow": 90}, 0.65), (REST_POSE, 0.5)],
+    "success_pump": [({"right_shoulder": 150, "right_elbow": 45, "left_shoulder": 150, "left_elbow": 45}, 0.35), ({"right_shoulder": 125, "right_elbow": 70, "left_shoulder": 125, "left_elbow": 70}, 0.2), ({"right_shoulder": 150, "right_elbow": 45, "left_shoulder": 150, "left_elbow": 45}, 0.35), (REST_POSE, 0.5)],
+    "side_eye": [({"right_shoulder": 80, "right_elbow": 100, "left_shoulder": 105, "left_elbow": 70}, 0.45), ({"right_shoulder": 80, "right_elbow": 100, "left_shoulder": 105, "left_elbow": 70}, 0.7), (REST_POSE, 0.45)],
+})
 KEYWORD_TRIGGERS = {
     "wave_right": ["wave", "hello", "hi there"],
     "wave_both": ["wave both", "wave with both", "big wave"],
@@ -186,6 +196,12 @@ KEYWORD_TRIGGERS = {
     "the_robot": ["do the robot", "robot dance"],
     "mic_drop": ["mic drop", "drop the mic"],
     "finger_guns": ["finger guns", "pew pew"],
+    "aura_farm": ["aura farm", "farm aura", "maximum aura"],
+    "six_seven": ["six seven gesture", "67 gesture", "do six seven"],
+    "npc_mode": ["npc mode", "act like an npc", "yes yes npc"],
+    "facepalm": ["facepalm", "bruh moment"],
+    "success_pump": ["success pose", "victory pump", "big win"],
+    "side_eye": ["side eye", "suspicious look", "really bro"],
     "point": ["point at", "point over there"],
     "full_dance": ["dance", "boogie", "groove"],
     "sit": ["sit down", "rest", "power down"],
