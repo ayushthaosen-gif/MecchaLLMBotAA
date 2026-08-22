@@ -143,7 +143,7 @@ void playKeyframeSequence(Keyframe* seq, int count) {
       if (d > maxDelta) maxDelta = d;
     }
     int speedDurationMs = maxDelta * 1000 / 220; // 220 deg/sec cap, matches motion_engine.py
-    int durationMs = max(max(speedDurationMs, seq[k].holdMs), 50);
+    int durationMs = max(speedDurationMs, 50);
     int steps = max(durationMs / stepIntervalMs, 1);
 
     for (int s = 1; s <= steps; s++) {
@@ -158,6 +158,7 @@ void playKeyframeSequence(Keyframe* seq, int count) {
       }
       vTaskDelay(pdMS_TO_TICKS(stepIntervalMs));
     }
+    vTaskDelay(pdMS_TO_TICKS(max(seq[k].holdMs, 0)));
   }
 }
 
