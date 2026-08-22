@@ -32,6 +32,7 @@
 #define SERVO_BUS_RX_PIN 16   // ESP32 UART2 RX <- level shifter <- Meccanoid bus (if bus is bidirectional)
 #define SERVO_BUS_BAUD   9600 // placeholder — match your captured protocol
 #define MAX_SERVOS       8
+#define MAX_COMMAND_LENGTH 128
 
 HardwareSerial ServoBus(2); // UART2 — dedicated to the Meccanoid bus, separate
                             // from Serial (UART0), which stays free for USB/Pi comms
@@ -94,9 +95,15 @@ void parseCommandLine(String line) {
 
     int eq = pair.indexOf('=');
     if (eq > 0) {
-      int servoId = pair.substring(0, eq).toInt();
-      int angle = pair.substring(eq + 1).toInt();
-      if (servoId >= 0 && servoId < MAX_SERVOS) {
+      String servoText = pair.substring(0, eq);
+      String angleText = pair.substring(eq + 1);
+      char *servoEnd = nullptr;
+      char *angleEnd = nullptr;
+      long servoId = strtol(servoText.c_str(), &servoEnd, 10);
+      long angle = strtol(angleText.c_str(), &angleEnd, 10);
+      bool servoValid = servoEnd != servoText.c_str() && *servoEnd == '\0';
+      bool angleValid = angleEnd != angleText.c_str() && *angleEnd == '\0';
+      if (servoValid && angleValid && servoId >= 0 && servoId < MAX_SERVOS) {
         angle = constrain(angle, 0, 180);
         if (xSemaphoreTake(stateMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
           targetAngles[servoId] = angle;
@@ -143,8 +150,15 @@ void loop() {
     if (c == '\n') {
       parseCommandLine(buffer);
       buffer = "";
-    } else {
-      buffer += c;
+    } else if (c != '\r') {
+      if (buffer.length() < MAX_COMMAND_LENGTH) {
+        buffer += c;
+      } else {
+        // Drop an overlong/incomplete line instead of allowing unbounded
+        // heap growth. Its remaining bytes are ignored until newline.
+        buffer = "";
+        while (Serial.available() && Serial.peek() != '\n') Serial.read();
+      }
     }
   }
 }
