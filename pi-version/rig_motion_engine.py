@@ -38,6 +38,7 @@ class RigMotionEngine:
         self._queue: "queue.Queue[Gesture]" = queue.Queue()
         self._thread: Optional[threading.Thread] = None
         self._running = False
+        self._stop_event = threading.Event()
         self._busy = threading.Event()
         self.on_frame = None  # optional callback(elapsed, {joint: angle}) for instrumentation
 
@@ -45,17 +46,22 @@ class RigMotionEngine:
         if self._thread and self._thread.is_alive():
             return
         self._running = True
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._running = False
+        self._stop_event.set()
         self._queue.put(None)
         if self._thread:
             self._thread.join(timeout=2)
 
-    def play(self, gesture: Gesture) -> None:
+    def play(self, gesture: Gesture) -> bool:
+        if not self._running:
+            return False
         self._queue.put(gesture)
+        return True
 
     @property
     def is_busy(self) -> bool:
@@ -72,6 +78,8 @@ class RigMotionEngine:
             self._busy.set()
             try:
                 for target_joints, hold_seconds in gesture:
+                    if self._stop_event.is_set():
+                        break
                     self._move_to(target_joints, hold_seconds)
             except Exception as exc:
                 print(f"[rig_motion_engine] gesture failed: {exc}")
@@ -89,6 +97,8 @@ class RigMotionEngine:
 
         t0 = time.perf_counter()
         for step in range(1, steps + 1):
+            if self._stop_event.is_set():
+                return
             t = _ease_in_out(step / steps)
             frame = {
                 j: round(start_joints[j] + (target_joints[j] - start_joints[j]) * t)
@@ -97,4 +107,5 @@ class RigMotionEngine:
             self.rig.set_joint_angles(frame)
             if self.on_frame:
                 self.on_frame(time.perf_counter() - t0, dict(frame))
-            time.sleep(self.STEP_INTERVAL)
+            if self._stop_event.wait(self.STEP_INTERVAL):
+                return

@@ -48,6 +48,7 @@
 #define MAX_SERVOS       8
 #define MAX_CHAIN        4    // the real bus's hard limit — same constant as servo_controller.py
 #define BIT_DELAY_US     417
+#define MAX_COMMAND_LENGTH 128
 
 #define HEADER_BYTE  0xFF
 #define NOMOD_BYTE   0xFE
@@ -175,13 +176,19 @@ void parseCommandLine(String line) {
 
     int eq = pair.indexOf('=');
     if (eq > 0) {
-      int servoId = pair.substring(0, eq).toInt();
-      int angle = pair.substring(eq + 1).toInt();
+      String servoText = pair.substring(0, eq);
+      String angleText = pair.substring(eq + 1);
+      char *servoEnd = nullptr;
+      char *angleEnd = nullptr;
+      long servoId = strtol(servoText.c_str(), &servoEnd, 10);
+      long angle = strtol(angleText.c_str(), &angleEnd, 10);
+      bool servoValid = servoEnd != servoText.c_str() && *servoEnd == '\0';
+      bool angleValid = angleEnd != angleText.c_str() && *angleEnd == '\0';
       // Clamped to MAX_CHAIN, not MAX_SERVOS: only the first 4 slots are
       // ever actually sent on the bus (see busTimingTask) — silently
       // accepting ids 4-7 here would look like it worked but never move
       // anything.
-      if (servoId >= 0 && servoId < MAX_CHAIN) {
+      if (servoValid && angleValid && servoId >= 0 && servoId < MAX_CHAIN) {
         angle = constrain(angle, 0, 180);
         if (xSemaphoreTake(stateMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
           targetAngles[servoId] = angle;
@@ -232,8 +239,15 @@ void loop() {
     if (c == '\n') {
       parseCommandLine(buffer);
       buffer = "";
-    } else {
-      buffer += c;
+    } else if (c != '\r') {
+      if (buffer.length() < MAX_COMMAND_LENGTH) {
+        buffer += c;
+      } else {
+        // Drop an overlong/incomplete line instead of allowing unbounded
+        // heap growth. Its remaining bytes are ignored until newline.
+        buffer = "";
+        while (Serial.available() && Serial.peek() != '\n') Serial.read();
+      }
     }
   }
 }
