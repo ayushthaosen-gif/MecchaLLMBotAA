@@ -28,15 +28,12 @@ kept intentionally small so that's a one-class swap, not a rewrite.
 """
 
 import os
-import time
-import uuid
-import datetime
-from dataclasses import dataclass, field
 from typing import Optional
 
 import requests
 
 from cloud_llm_backends import build_llm_backend
+from state_backend import build_state_backend
 
 # ---------------------------------------------------------------------------
 # Config
@@ -44,6 +41,8 @@ from cloud_llm_backends import build_llm_backend
 
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # "gemini" or "claude"
 WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")
+ROBOT_API_TOKEN = os.environ.get("ROBOT_API_TOKEN", "")
+DEFAULT_ROBOT_ID = os.environ.get("ROBOT_ID", "meccanoid-1")
 
 
 # ---------------------------------------------------------------------------
@@ -52,57 +51,22 @@ WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "")
 # only class that needs to change.
 # ---------------------------------------------------------------------------
 
-class MemoryStore:
-    def __init__(self):
-        self._log = []  # list of (timestamp, role, text) — replace with a
-                         # Firestore collection or Supabase table in prod
-
-    def append(self, role: str, text: str) -> None:
-        self._log.append((datetime.datetime.now().isoformat(timespec="seconds"), role, text))
-
-    def recent_text(self, max_chars: int = 4000) -> str:
-        blob = "\n".join(f"[{ts}] {role}: {text}" for ts, role, text in self._log)
-        return blob[-max_chars:]
-
-
-# ---------------------------------------------------------------------------
-# Two separate queues — this is the actual fix for a real bug: gestures
-# were previously only enqueued AFTER the slow LLM call finished, even
-# though gesture matching itself is instant. That defeated the whole
-# "move while thinking" premise from the original architecture. Splitting
-# motion from reply lets the ESP32's poll loop see a queued gesture the
-# moment handle_chat() computes it — well before the LLM call returns —
-# since a concurrent poll request isn't blocked by the /chat request
-# still running the LLM call.
-# ---------------------------------------------------------------------------
-
-@dataclass
-class QueuedItem:
-    id: str
-    value: Optional[str]
-    created_at: float = field(default_factory=time.time)
-    delivered: bool = False
-
-
 class SimpleQueue:
-    def __init__(self):
-        self._pending: list[QueuedItem] = []
+    """Compatibility adapter around a robot-scoped state backend."""
 
-    def enqueue(self, value: Optional[str]) -> QueuedItem:
-        item = QueuedItem(id=str(uuid.uuid4()), value=value)
-        self._pending.append(item)
-        return item
+    def __init__(self, backend, robot_id: str, queue_name: str):
+        self.backend = backend
+        self.robot_id = robot_id
+        self.queue_name = queue_name
 
-    def next_undelivered(self) -> Optional[QueuedItem]:
-        for item in self._pending:
-            if not item.delivered:
-                return item
-        return None
+    def enqueue(self, value: str):
+        return self.backend.enqueue(self.robot_id, self.queue_name, value)
 
-    def ack(self, item_id: str) -> None:
-        for item in self._pending:
-            if item.id == item_id:
-                item.delivered = True
+    def next_undelivered(self):
+        return self.backend.next_item(self.robot_id, self.queue_name)
+
+    def ack(self, item_id: str) -> bool:
+        return self.backend.ack(self.robot_id, self.queue_name, item_id)
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +174,12 @@ def classify_mood(reply_text: str) -> str:
 # ---------------------------------------------------------------------------
 
 class RobotBrainService:
-    def __init__(self, llm_client=None, eyes=None):
-        self.memory = MemoryStore()
-        self.motion_queue = SimpleQueue()      # arm gestures
-        self.locomotion_queue = SimpleQueue()  # wheel drive commands
-        self.reply_queue = SimpleQueue()
+    def __init__(self, llm_client=None, eyes=None, backend=None, robot_id=DEFAULT_ROBOT_ID):
+        self.backend = backend or build_state_backend()
+        self.robot_id = robot_id
+        self.motion_queue = SimpleQueue(self.backend, robot_id, "motion")
+        self.locomotion_queue = SimpleQueue(self.backend, robot_id, "locomotion")
+        self.reply_queue = SimpleQueue(self.backend, robot_id, "reply")
         self._llm_client = llm_client  # injected stub for testing; real
                                         # deployment builds an anthropic.Anthropic()
         self.eyes = eyes  # optional EyeModule — status/mood calls are no-ops if None
@@ -227,7 +192,7 @@ class RobotBrainService:
         if self.eyes:
             self.eyes.set_status("listening")
 
-        self.memory.append("you", message)
+        self.backend.append_memory(self.robot_id, "you", message)
 
         # Gesture AND locomotion matching are both instant — enqueue both
         # immediately, before the slow LLM call, so movement of either
@@ -245,7 +210,7 @@ class RobotBrainService:
         system_prompt = (
             "You are the voice of a physical Meccanoid robot whose brain is "
             "an ESP32 talking to you over the cloud. Keep replies short and "
-            "speakable aloud. Recent conversation:\n\n" + self.memory.recent_text()
+            "speakable aloud. Recent conversation:\n\n" + self.backend.recent_memory(self.robot_id)
         )
         if tool_context:
             system_prompt += f"\n\nLive tool result:\n{tool_context}"
@@ -254,7 +219,7 @@ class RobotBrainService:
             self.eyes.set_status("thinking")  # instant, BEFORE the slow call below
 
         reply_text = self._call_llm(system_prompt, message)  # slow — network/model call
-        self.memory.append("robot", reply_text)
+        self.backend.append_memory(self.robot_id, "robot", reply_text)
         self.reply_queue.enqueue(reply_text)
 
         mood = classify_mood(reply_text)
@@ -286,47 +251,94 @@ try:
 except ImportError:
     _eyes = None  # eyes.py not present — fine, RobotBrainService no-ops without it
 
-_service = RobotBrainService(eyes=_eyes)
+_backend = build_state_backend()
+_services = {}
+
+
+def get_service(robot_id: str) -> RobotBrainService:
+    robot_id = (robot_id or DEFAULT_ROBOT_ID).strip()
+    if not robot_id or len(robot_id) > 64 or not all(
+        char.isalnum() or char in "-_" for char in robot_id
+    ):
+        raise ValueError("invalid robot_id")
+    if robot_id not in _services:
+        _services[robot_id] = RobotBrainService(
+            eyes=_eyes, backend=_backend, robot_id=robot_id
+        )
+    return _services[robot_id]
+
 
 try:
     import functions_framework
-    from flask import jsonify, request
+    from flask import jsonify
+
+    def _authorized(req):
+        return (
+            not ROBOT_API_TOKEN
+            or req.headers.get("Authorization", "") == f"Bearer {ROBOT_API_TOKEN}"
+        )
+
+    def _request_service(req, body=None):
+        body = body or {}
+        robot_id = body.get("robot_id") or req.args.get("robot_id") or DEFAULT_ROBOT_ID
+        return get_service(robot_id)
 
     @functions_framework.http
     def chat(req):
+        if not _authorized(req):
+            return jsonify({"error": "unauthorized"}), 401
         body = req.get_json(silent=True) or {}
-        result = _service.handle_chat(body.get("message", ""))
+        try:
+            result = _request_service(req, body).handle_chat(body.get("message", ""))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify(result)
+
+    def _next(req, queue_name, value_key):
+        if not _authorized(req):
+            return jsonify({"error": "unauthorized"}), 401
+        try:
+            item = getattr(_request_service(req), f"{queue_name}_queue").next_undelivered()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if item is None:
+            return jsonify({"pending": False})
+        return jsonify({"pending": True, "id": item.id, value_key: item.value})
+
+    def _ack(req, queue_name):
+        if not _authorized(req):
+            return jsonify({"error": "unauthorized"}), 401
+        body = req.get_json(silent=True) or {}
+        try:
+            queue = getattr(_request_service(req, body), f"{queue_name}_queue")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        ok = queue.ack(body.get("id", ""))
+        return jsonify({"ok": ok}), (200 if ok else 404)
 
     @functions_framework.http
     def next_motion(req):
-        """Fast, frequent poll target — only ever contains a gesture name,
-        never waits on the LLM."""
-        item = _service.motion_queue.next_undelivered()
-        if item is None:
-            return jsonify({"pending": False})
-        return jsonify({"pending": True, "id": item.id, "gesture": item.value})
+        return _next(req, "motion", "gesture")
 
     @functions_framework.http
     def ack_motion(req):
-        body = req.get_json(silent=True) or {}
-        _service.motion_queue.ack(body.get("id", ""))
-        return jsonify({"ok": True})
+        return _ack(req, "motion")
+
+    @functions_framework.http
+    def next_locomotion(req):
+        return _next(req, "locomotion", "locomotion")
+
+    @functions_framework.http
+    def ack_locomotion(req):
+        return _ack(req, "locomotion")
 
     @functions_framework.http
     def next_reply(req):
-        """Separate, can be polled less aggressively — only ever contains
-        text, for logging/TTS/display, arrives after the LLM finishes."""
-        item = _service.reply_queue.next_undelivered()
-        if item is None:
-            return jsonify({"pending": False})
-        return jsonify({"pending": True, "id": item.id, "reply": item.value})
+        return _next(req, "reply", "reply")
 
     @functions_framework.http
     def ack_reply(req):
-        body = req.get_json(silent=True) or {}
-        _service.reply_queue.ack(body.get("id", ""))
-        return jsonify({"ok": True})
+        return _ack(req, "reply")
 
 except ImportError:
     # functions_framework isn't installed in this environment — fine for
