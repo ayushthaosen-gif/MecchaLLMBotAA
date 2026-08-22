@@ -96,16 +96,15 @@ class MotionEngine:
     def _move_to(self, target_angles: dict, hold_seconds: float) -> None:
         """Smoothly interpolate every named servo from its current angle to
         the target, instead of snapping — this is the main "make it look
-        better" lever. Duration is whichever is larger: the time the
-        farthest-moving servo needs at max_speed, or the gesture's own
-        hold_seconds (so slow deliberate keyframes aren't rushed)."""
+        better" lever. Movement duration is determined by the speed cap. Once the target is
+        reached, the pose is held for hold_seconds."""
         start_angles = {sid: self.bus.get_angle(sid) for sid in target_angles}
         max_delta = max(
             (abs(target_angles[sid] - start_angles[sid]) for sid in target_angles),
             default=0,
         )
         speed_duration = max_delta / self.max_speed if self.max_speed > 0 else 0
-        duration = max(speed_duration, hold_seconds, 0.05)
+        duration = max(speed_duration, 0.05)
 
         steps = max(int(duration / self.STEP_INTERVAL), 1)
         for step in range(1, steps + 1):
@@ -116,6 +115,7 @@ class MotionEngine:
             }
             self.bus.set_angles(frame)
             time.sleep(self.STEP_INTERVAL)
+        time.sleep(max(hold_seconds, 0.0))
 
 
 # ---------------------------------------------------------------------------
