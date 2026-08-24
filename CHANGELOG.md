@@ -5,6 +5,21 @@ this repo's `main` branch.
 
 ## [Unreleased]
 
+### Improved (stable facial tracking)
+- Upgraded both camera-mirror implementations to combine multiple
+  MediaPipe blendshapes per expression instead of relying on one dominant
+  feature. Fear is now distinguished from surprise using mouth stretch,
+  frown, eye-wide, brow, and jaw signals.
+- Added exponential blendshape smoothing, three-frame confirmation,
+  expression-switch hysteresis, and a 450ms face-loss grace period so the
+  robot eye color does not flicker on noisy frames.
+- Added live face-contour and iris overlays plus a face confidence readout.
+  Explicit 0.6 detection/presence/tracking thresholds reject weak face
+  locks, while single-face mode retains MediaPipe's internal smoothing.
+- Face inference now runs at 20Hz and is cached between the 40Hz pose
+  frames, reducing synchronous main-thread work without slowing arm
+  tracking.
+
 ### Fixed (follow mode was bidirectional, should be forward-only for now)
 - Follow mode's distance decision drove the wheels both directions
   (forward when farther, backward when closer) around the baseline

@@ -57,32 +57,106 @@ const EXPRESSION_COLORS:Record<Expression,string>={
  surprised:"#c65fff", fear:"#9b6dff", disgust:"#7cc242",
 };
 
-// Heuristic classifier over MediaPipe FaceLandmarker's 52 blendshape
-// categories — not a trained expression model, just the handful of
-// blendshapes that most directly signal each expression, scored and
-// picked by whichever is most dominant. A 0.35 floor keeps a resting
-// face classified as "neutral" instead of flickering between low-
-// confidence guesses. "fear" is deliberately not classified here — its
-// signature (wide eyes + raised brows) overlaps too heavily with
-// "surprised" to tell apart reliably from a handful of scores; it stays
-// in the palette for a future, better classifier.
-function classifyExpression(blendshapes?:{categoryName:string;score:number}[]):Expression{
- if(!blendshapes||!blendshapes.length)return"neutral";
- const score=(name:string)=>blendshapes.find(b=>b.categoryName===name)?.score||0;
- const smile=(score("mouthSmileLeft")+score("mouthSmileRight"))/2;
- const frown=(score("mouthFrownLeft")+score("mouthFrownRight"))/2;
- const browDown=(score("browDownLeft")+score("browDownRight"))/2;
- const eyeWide=(score("eyeWideLeft")+score("eyeWideRight"))/2;
- const jawOpen=score("jawOpen"), browUp=score("browInnerUp");
- const noseSneer=(score("noseSneerLeft")+score("noseSneerRight"))/2;
- const candidates:[Expression,number][]=[
-  ["happy",smile],["surprised",eyeWide*0.5+jawOpen*0.3+browUp*0.2],
-  ["angry",browDown],["sad",frown*0.7+browUp*0.3],["disgust",noseSneer],
- ];
- candidates.sort((a,b)=>b[1]-a[1]);
- return candidates[0][1]>0.35?candidates[0][0]:"neutral";
+// MediaPipe returns 52 independent blendshape coefficients rather than a
+// ready-made emotion label. Combine multiple anatomically related signals,
+// smooth them over time, and require a short stable run before changing the
+// robot's eyes. This avoids the single-feature false positives and flicker
+// caused by classifying every frame independently.
+const FACE_INFERENCE_HZ=20;
+const FACE_FRAME_INTERVAL_MS=1000/FACE_INFERENCE_HZ;
+const FACE_LOST_GRACE_MS=450;
+const BLENDSHAPE_EMA_ALPHA=.28;
+const EXPRESSION_ENTER_THRESHOLD=.36;
+const EXPRESSION_SWITCH_MARGIN=.08;
+
+type Blendshape={categoryName:string;score:number};
+type ExpressionSnapshot={expression:Expression;confidence:number;faceTracked:boolean;changed:boolean};
+type ExpressionScoreSet={scores:Record<Expression,number>;winner:Expression};
+
+const clamp01=(v:number)=>Math.max(0,Math.min(1,v));
+const mean=(...values:number[])=>values.reduce((sum,value)=>sum+value,0)/values.length;
+
+function scoreExpressions(values:Map<string,number>):ExpressionScoreSet{
+ const get=(name:string)=>values.get(name)||0;
+ const bilateral=(name:string)=>mean(get(name+"Left"),get(name+"Right"));
+ const smile=bilateral("mouthSmile"),frown=bilateral("mouthFrown");
+ const cheekSquint=bilateral("cheekSquint"),dimple=bilateral("mouthDimple");
+ const browDown=bilateral("browDown"),browOuterUp=bilateral("browOuterUp");
+ const eyeWide=bilateral("eyeWide"),eyeSquint=bilateral("eyeSquint");
+ const noseSneer=bilateral("noseSneer"),upperLip=bilateral("mouthUpperUp");
+ const mouthPress=bilateral("mouthPress"),mouthStretch=bilateral("mouthStretch");
+ const mouthLowerDown=bilateral("mouthLowerDown");
+ const jawOpen=get("jawOpen"),browInnerUp=get("browInnerUp");
+ const mouthFunnel=get("mouthFunnel"),mouthShrugUpper=get("mouthShrugUpper");
+
+ const scores:Record<Expression,number>={
+  neutral:0,
+  happy:clamp01(smile*.60+cheekSquint*.25+dimple*.15-frown*.22),
+  surprised:clamp01(jawOpen*.34+eyeWide*.32+Math.max(browInnerUp,browOuterUp)*.22+mouthFunnel*.12-smile*.18),
+  fear:clamp01(eyeWide*.32+browInnerUp*.26+mouthStretch*.26+frown*.16-jawOpen*.14-smile*.18),
+  angry:clamp01(browDown*.42+eyeSquint*.23+mouthPress*.20+noseSneer*.15-smile*.24),
+  sad:clamp01(frown*.48+browInnerUp*.28+mouthLowerDown*.14+eyeSquint*.10-smile*.20),
+  disgust:clamp01(noseSneer*.50+upperLip*.30+mouthShrugUpper*.20-smile*.15),
+ };
+ const ranked=(Object.entries(scores) as [Expression,number][])
+  .filter(([name])=>name!=="neutral").sort((a,b)=>b[1]-a[1]);
+ const [best,bestScore]=ranked[0];
+ scores.neutral=clamp01(1-bestScore);
+ return {scores,winner:bestScore>=EXPRESSION_ENTER_THRESHOLD?best:"neutral"};
 }
 
+class StableExpressionTracker{
+ private ema=new Map<string,number>();
+ private candidate:Expression="neutral";
+ private candidateFrames=0;
+ private lastFaceSeen=0;
+ current:Expression="neutral";
+ confidence=0;
+ faceTracked=false;
+
+ reset(){
+  this.ema.clear();this.candidate="neutral";this.candidateFrames=0;
+  this.lastFaceSeen=0;this.current="neutral";this.confidence=0;this.faceTracked=false;
+ }
+ snapshot():ExpressionSnapshot{
+  return {expression:this.current,confidence:this.confidence,faceTracked:this.faceTracked,changed:false};
+ }
+ update(blendshapes:Blendshape[]|undefined,now:number):ExpressionSnapshot{
+  const previous=this.current;
+  if(!blendshapes?.length){
+   if(now-this.lastFaceSeen<=FACE_LOST_GRACE_MS)return this.snapshot();
+   this.ema.clear();this.candidate="neutral";this.candidateFrames=0;
+   this.current="neutral";this.confidence=0;this.faceTracked=false;
+   return {expression:this.current,confidence:0,faceTracked:false,changed:previous!==this.current};
+  }
+
+  this.lastFaceSeen=now;this.faceTracked=true;
+  for(const shape of blendshapes){
+   const prior=this.ema.get(shape.categoryName);
+   this.ema.set(shape.categoryName,prior===undefined?shape.score:prior+(shape.score-prior)*BLENDSHAPE_EMA_ALPHA);
+  }
+  const result=scoreExpressions(this.ema);
+  let requested=result.winner;
+  if(this.current!=="neutral"){
+   const currentScore=result.scores[this.current];
+   if(requested==="neutral"&&currentScore>=.26)requested=this.current;
+   else if(requested!==this.current&&requested!=="neutral"&&result.scores[requested]<currentScore+EXPRESSION_SWITCH_MARGIN)requested=this.current;
+  }
+
+  if(requested===this.current){
+   this.candidate=requested;this.candidateFrames=0;
+  }else{
+   if(requested===this.candidate)this.candidateFrames+=1;
+   else{this.candidate=requested;this.candidateFrames=1}
+   const requiredFrames=requested==="neutral"?4:3;
+   if(this.candidateFrames>=requiredFrames){
+    this.current=requested;this.candidateFrames=0;
+   }
+  }
+  this.confidence=this.current==="neutral"?result.scores.neutral:result.scores[this.current];
+  return {expression:this.current,confidence:this.confidence,faceTracked:true,changed:previous!==this.current};
+ }
+}
 // Small glowing dot + crosshair at a tracked joint — drawn on the same
 // (mirrored) canvas as the wireframe, so it stays pixel-locked to the
 // joint. Angle text is NOT drawn here — canvas text would render
@@ -116,6 +190,8 @@ export default function MirrorPage(){
  const fpsRef=useRef(0),lastFrameRef=useRef(performance.now()),lastHudRef=useRef(0);
  const lockRef=useRef<LockState>("searching"),uplinkRef=useRef(false);
  const expressionRef=useRef<Expression>("neutral");
+ const expressionTrackerRef=useRef(new StableExpressionTracker());
+ const cachedFaceResultRef=useRef<any>(null),lastFaceProcessedRef=useRef(0);
 
  // Follow mode: crossing wrists toggles it on/off (debounced so a held
  // cross doesn't flap). While on, the shoulder-width in frame at the
@@ -134,7 +210,7 @@ export default function MirrorPage(){
  const lastProcessedRef=useRef(0);
 
  const [running,setRunning]=useState(false),[status,setStatus]=useState("Camera stopped"),[endpoint,setEndpoint]=useState(""),[token,setToken]=useState("");
- const [hud,setHud]=useState({fps:0,latencyMs:0,lock:"searching" as LockState,streaming:false,expression:"neutral" as Expression,follow:false,followAction:"stop"});
+ const [hud,setHud]=useState({fps:0,latencyMs:0,lock:"searching" as LockState,streaming:false,expression:"neutral" as Expression,expressionConfidence:0,faceTracked:false,follow:false,followAction:"stop"});
  const [joints,setJoints]=useState<Joints|null>(null);
  const [positions,setPositions]=useState<JointPositions|null>(null);
  const [log,setLog]=useState<LogLine[]>([{ts:"--:--:--",kind:"sys",msg:"idle"}]);
@@ -147,7 +223,8 @@ export default function MirrorPage(){
   cancelAnimationFrame(raf.current);
   video.current?.srcObject instanceof MediaStream&&video.current.srcObject.getTracks().forEach(t=>t.stop());
   setRunning(false);
-  setHud(h=>({...h,lock:"searching",streaming:false,follow:false}));
+  setHud(h=>({...h,lock:"searching",streaming:false,expression:"neutral",expressionConfidence:0,faceTracked:false,follow:false}));
+  expressionTrackerRef.current.reset();expressionRef.current="neutral";cachedFaceResultRef.current=null;lastFaceProcessedRef.current=0;
   if(followRef.current)pushLog("track","follow mode released (camera stopped)");
   followRef.current=false;followBaselineRef.current=null;
   if(report){setStatus("Camera stopped — robot auto-rests within 750 ms.");pushLog("sys","camera stopped — robot auto-rests within 750ms")}
@@ -164,7 +241,13 @@ export default function MirrorPage(){
    }
    if(!faceTracker.current){
     pushLog("net","loading face_landmarker model (expression tracking)...");
-    faceTracker.current=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true});
+    faceTracker.current=await FaceLandmarker.createFromOptions(vision,{
+     baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},
+     runningMode:"VIDEO",
+     // MediaPipe applies built-in landmark smoothing only in single-face mode.
+     numFaces:1,minFaceDetectionConfidence:.6,minFacePresenceConfidence:.6,minTrackingConfidence:.6,
+     outputFaceBlendshapes:true,
+    });
     pushLog("net","face model ready");
    }
    setStatus("Requesting camera access…");pushLog("cam","requesting camera access...");
@@ -174,6 +257,7 @@ export default function MirrorPage(){
    if(!video.current)return;video.current.srcObject=stream;await video.current.play();
    setRunning(true);setStatus("Tracking locally");lastFrameRef.current=performance.now();lastProcessedRef.current=0;
    lockRef.current="searching";uplinkRef.current=false;
+   expressionTrackerRef.current.reset();expressionRef.current="neutral";cachedFaceResultRef.current=null;lastFaceProcessedRef.current=0;
    followRef.current=false;followBaselineRef.current=null;lastCrossedRef.current=false;
    pushLog("sys",`tracking loop started (visuals capped ${VISUAL_HZ_CAP}Hz — 2x the robot's own ${BOT_MAX_HZ}Hz limit)`);
    loop();
@@ -197,9 +281,13 @@ export default function MirrorPage(){
 
   const detectStart=performance.now();
   const result=t.detectForVideo(v,now);
-  const faceResult=ft.detectForVideo(v,now);
+  let faceUpdated=false;
+  if(now-lastFaceProcessedRef.current>=FACE_FRAME_INTERVAL_MS){
+   cachedFaceResultRef.current=ft.detectForVideo(v,now);
+   lastFaceProcessedRef.current=now;faceUpdated=true;
+  }
+  const faceResult=cachedFaceResultRef.current;
   const latencyMs=performance.now()-detectStart;
-
   // Two separate gates, not one: whether to DRAW (loose — any pose at
   // all) vs whether it's confident enough to COMPUTE + STREAM angles to
   // a real robot (stricter — arm joints specifically). Requiring all 8
@@ -214,13 +302,18 @@ export default function MirrorPage(){
   let lock:LockState="searching";
   let locomotionAction:string|null=null;
 
-  const blendshapes=faceResult.faceBlendshapes?.[0]?.categories;
-  const expression=classifyExpression(blendshapes);
-  if(expression!==expressionRef.current){
-   expressionRef.current=expression;
-   pushLog("track",`expression: ${expression}`);
+  const blendshapes=faceResult?.faceBlendshapes?.[0]?.categories as Blendshape[]|undefined;
+  const faceState=faceUpdated?expressionTrackerRef.current.update(blendshapes,now):expressionTrackerRef.current.snapshot();
+  expressionRef.current=faceState.expression;
+  if(faceState.changed)pushLog("track","expression: "+faceState.expression+" ("+Math.round(faceState.confidence*100)+"%)");
+  const faceLandmarks=faceResult?.faceLandmarks?.[0];
+  if(faceLandmarks&&faceState.faceTracked){
+   const faceColor=EXPRESSION_COLORS[faceState.expression];
+   const faceDrawing=new DrawingUtils(ctx);
+   faceDrawing.drawConnectors(faceLandmarks,FaceLandmarker.FACE_LANDMARKS_CONTOURS,{color:faceColor+"aa",lineWidth:1.2});
+   faceDrawing.drawConnectors(faceLandmarks,FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS,{color:"#ffffffcc",lineWidth:1});
+   faceDrawing.drawConnectors(faceLandmarks,FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS,{color:"#ffffffcc",lineWidth:1});
   }
-
   if(poseDetected){
    const l=result.landmarks[0];
    new DrawingUtils(ctx).drawConnectors(l,PoseLandmarker.POSE_CONNECTIONS,{color:armsConfident?"#4fd8e0aa":"#4fd8e055",lineWidth:2});
@@ -306,7 +399,7 @@ export default function MirrorPage(){
   if(now-lastHudRef.current>120){
    lastHudRef.current=now;
    setHud({fps:Math.round(fpsRef.current),latencyMs:Math.round(latencyMs),lock,streaming,
-     expression:expressionRef.current,follow:followRef.current,followAction:locomotionAction||"stop"});
+     expression:expressionRef.current,expressionConfidence:faceState.confidence,faceTracked:faceState.faceTracked,follow:followRef.current,followAction:locomotionAction||"stop"});
    setJoints(liveJoints);
    setPositions(livePositions);
   }
@@ -318,7 +411,7 @@ export default function MirrorPage(){
  const lockClass={searching:"warn",locking:"partial",tracking:"ok"}[hud.lock];
  const eyeColor=EXPRESSION_COLORS[hud.expression];
  return <main className="mirrorPage"><header><a href="/">← Console</a><div className="brand"><b>MECCANOID</b> // POSE MIRROR</div></header>
- <section className="panel"><h1>Copy my arm movements</h1><p className="note">Your camera is processed on this device. Only four joint angles (plus an expression tag and an optional follow-mode direction) are transmitted; video never goes to the robot or cloud.</p>
+ <section className="panel"><h1>Copy my arm movements</h1><p className="note">Face contours, iris markers, and pose wireframes are processed on this device. Only four joint angles (plus a stabilized expression tag and an optional follow-mode direction) are transmitted; video never goes to the robot or cloud.</p>
   <div className="camera">
    <video ref={video} playsInline muted/><canvas ref={canvas}/>
    <div className="hudCorners"><i/><i/><i/><i/></div>
@@ -327,7 +420,7 @@ export default function MirrorPage(){
     <div><small>LATENCY</small><b>{hud.lock!=="searching"?`${hud.latencyMs}ms`:"—"}</b></div>
     <div><small>LOCK</small><b className={lockClass}>{lockLabel}</b></div>
     <div><small>UPLINK</small><b className={hud.streaming?"ok":"dim"}>{endpoint?(hud.streaming?"LIVE":(hud.lock==="tracking"?"IDLE":"WAIT")):"OFF"}</b></div>
-    <div><small>EXPRESSION</small><b className={hud.expression==="neutral"?"dim":"ok"}>{hud.expression.toUpperCase()}</b></div>
+    <div><small>FACE</small><b className={!hud.faceTracked?"warn":hud.expression==="neutral"?"dim":"ok"}>{hud.faceTracked?hud.expression.toUpperCase()+" "+Math.round(hud.expressionConfidence*100)+"%":"SEARCHING"}</b></div>
     <div><small>FOLLOW</small><b className={hud.follow?"ok":"dim"}>{hud.follow?`ON (${hud.followAction.toUpperCase()})`:"OFF"}</b></div>
    </div>
    <div className="eyePair"><span className="eyeDot" style={{background:eyeColor,boxShadow:`0 0 8px ${eyeColor}`}}/><span className="eyeDot" style={{background:eyeColor,boxShadow:`0 0 8px ${eyeColor}`}}/></div>

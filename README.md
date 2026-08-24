@@ -318,11 +318,13 @@ ever leaves the browser), to:
   requires shoulders/elbows/wrists specifically confident (no hips needed —
   see `torsoReference()` in either mirror script for why hip visibility
   isn't actually required for the angle math either).
-- **Track face expression** (a second MediaPipe model, `FaceLandmarker`)
-  and classify it into one of 7 hues (happy/sad/angry/surprised/fear/
-  disgust/neutral — see `EXPRESSION_COLORS` for the palette rationale),
-  sent as `mood` and applied to the robot's eye LEDs via `eyes.py`'s
-  `MOOD_COLORS`.
+- **Track the face and expression** with a second MediaPipe model
+  (FaceLandmarker): face contours and both irises are drawn locally,
+  while all 52 blendshape coefficients are temporally smoothed and scored
+  from multiple facial signals. Three-frame confirmation, switch
+  hysteresis, and a 450ms face-loss grace period prevent eye-color
+  flicker. The stable result is one of 7 moods (happy/sad/angry/
+  surprised/fear/disgust/neutral), sent to the robot's eye LEDs.
 - **Detect crossed wrists** as a "follow mode" toggle: crossing your wrists
   *locks* your current apparent distance (shoulder width in frame — see
   "How distance is tracked" below) as the target. From then on, if you

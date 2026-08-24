@@ -350,7 +350,7 @@
   <div class="panel">
     <div class="panel-title">Camera Mirror</div>
     <div class="cfg-note" style="margin-bottom:2px;">
-      Your camera is processed on this device. Only four joint angles are transmitted — video never goes to the robot or cloud.
+      Face contours, iris markers, and pose wireframes are processed on this device. Only four joint angles plus a stabilized expression tag are transmitted — video never goes to the robot or cloud.
     </div>
     <div class="camera-wrap" id="cameraWrap">
       <video id="mirrorVideo" playsinline muted></video>
@@ -361,7 +361,7 @@
         <div><span class="k">LATENCY</span><b id="hudLatency">—</b></div>
         <div><span class="k">LOCK</span><b id="hudLock" class="warn">SEARCHING</b></div>
         <div><span class="k">UPLINK</span><b id="hudUplink" class="dim-txt">OFF</b></div>
-        <div><span class="k">EXPRESSION</span><b id="hudExpression" class="dim-txt">—</b></div>
+        <div><span class="k">FACE</span><b id="hudExpression" class="warn">SEARCHING</b></div>
         <div><span class="k">FOLLOW</span><b id="hudFollow" class="dim-txt">OFF</b></div>
       </div>
       <div class="eye-pair" id="eyePair"><span class="eye-dot" id="eyeDotL"></span><span class="eye-dot" id="eyeDotR"></span></div>
@@ -684,39 +684,72 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
     disgust:   '#7cc242', // sickly green — nausea association
   };
 
-  // Heuristic classifier over MediaPipe FaceLandmarker's 52 blendshape
-  // categories — not a trained expression model, just the handful of
-  // blendshapes that most directly signal each expression, scored and
-  // picked by whichever is most dominant. A 0.35 floor keeps a resting
-  // face classified as "neutral" instead of flickering between
-  // low-confidence guesses.
-  function classifyExpression(blendshapes){
-    if(!blendshapes || !blendshapes.length) return 'neutral';
-    const score = name => blendshapes.find(b => b.categoryName === name)?.score || 0;
-    const smile = (score('mouthSmileLeft') + score('mouthSmileRight')) / 2;
-    const frown = (score('mouthFrownLeft') + score('mouthFrownRight')) / 2;
-    const browDown = (score('browDownLeft') + score('browDownRight')) / 2;
-    const eyeWide = (score('eyeWideLeft') + score('eyeWideRight')) / 2;
-    const jawOpen = score('jawOpen');
-    const browUp = score('browInnerUp');
-    const noseSneer = (score('noseSneerLeft') + score('noseSneerRight')) / 2;
+  // MediaPipe returns 52 independent blendshape coefficients rather than
+  // a ready-made emotion label. Combine related signals, smooth them over
+  // time, and require a short stable run before changing the robot's eyes.
+  const FACE_INFERENCE_HZ=20, FACE_FRAME_INTERVAL_MS=1000/FACE_INFERENCE_HZ;
+  const FACE_LOST_GRACE_MS=450, BLENDSHAPE_EMA_ALPHA=.28;
+  const EXPRESSION_ENTER_THRESHOLD=.36, EXPRESSION_SWITCH_MARGIN=.08;
+  const clamp01=v=>Math.max(0,Math.min(1,v));
+  const mean=(...v)=>v.reduce((sum,x)=>sum+x,0)/v.length;
 
-    // "fear" is deliberately not classified here — its blendshape
-    // signature (wide eyes + raised inner brows) overlaps too heavily
-    // with "surprised" to tell apart reliably from a handful of scores;
-    // it stays in EXPRESSION_COLORS/eyes.py's palette for a future,
-    // better classifier rather than guessing wrong most of the time.
-    const candidates = [
-      { name: 'happy',     v: smile },
-      { name: 'surprised', v: eyeWide*0.5 + jawOpen*0.3 + browUp*0.2 },
-      { name: 'angry',     v: browDown },
-      { name: 'sad',       v: frown*0.7 + browUp*0.3 },
-      { name: 'disgust',   v: noseSneer },
-    ];
-    candidates.sort((a,b) => b.v - a.v);
-    return candidates[0].v > 0.35 ? candidates[0].name : 'neutral';
+  function scoreExpressions(values){
+    const get=name=>values.get(name)||0;
+    const bilateral=name=>mean(get(name+'Left'),get(name+'Right'));
+    const smile=bilateral('mouthSmile'),frown=bilateral('mouthFrown');
+    const cheekSquint=bilateral('cheekSquint'),dimple=bilateral('mouthDimple');
+    const browDown=bilateral('browDown'),browOuterUp=bilateral('browOuterUp');
+    const eyeWide=bilateral('eyeWide'),eyeSquint=bilateral('eyeSquint');
+    const noseSneer=bilateral('noseSneer'),upperLip=bilateral('mouthUpperUp');
+    const mouthPress=bilateral('mouthPress'),mouthStretch=bilateral('mouthStretch');
+    const mouthLowerDown=bilateral('mouthLowerDown');
+    const jawOpen=get('jawOpen'),browInnerUp=get('browInnerUp');
+    const mouthFunnel=get('mouthFunnel'),mouthShrugUpper=get('mouthShrugUpper');
+    const scores={
+      neutral:0,
+      happy:clamp01(smile*.60+cheekSquint*.25+dimple*.15-frown*.22),
+      surprised:clamp01(jawOpen*.34+eyeWide*.32+Math.max(browInnerUp,browOuterUp)*.22+mouthFunnel*.12-smile*.18),
+      fear:clamp01(eyeWide*.32+browInnerUp*.26+mouthStretch*.26+frown*.16-jawOpen*.14-smile*.18),
+      angry:clamp01(browDown*.42+eyeSquint*.23+mouthPress*.20+noseSneer*.15-smile*.24),
+      sad:clamp01(frown*.48+browInnerUp*.28+mouthLowerDown*.14+eyeSquint*.10-smile*.20),
+      disgust:clamp01(noseSneer*.50+upperLip*.30+mouthShrugUpper*.20-smile*.15),
+    };
+    const ranked=Object.entries(scores).filter(([name])=>name!=='neutral').sort((x,y)=>y[1]-x[1]);
+    const [best,bestScore]=ranked[0];scores.neutral=clamp01(1-bestScore);
+    return {scores,winner:bestScore>=EXPRESSION_ENTER_THRESHOLD?best:'neutral'};
   }
 
+  class StableExpressionTracker{
+    constructor(){this.reset()}
+    reset(){this.ema=new Map();this.candidate='neutral';this.candidateFrames=0;this.lastFaceSeen=0;this.current='neutral';this.confidence=0;this.faceTracked=false}
+    snapshot(){return {expression:this.current,confidence:this.confidence,faceTracked:this.faceTracked,changed:false}}
+    update(blendshapes,now){
+      const previous=this.current;
+      if(!blendshapes?.length){
+        if(now-this.lastFaceSeen<=FACE_LOST_GRACE_MS)return this.snapshot();
+        this.ema.clear();this.candidate='neutral';this.candidateFrames=0;this.current='neutral';this.confidence=0;this.faceTracked=false;
+        return {expression:this.current,confidence:0,faceTracked:false,changed:previous!==this.current};
+      }
+      this.lastFaceSeen=now;this.faceTracked=true;
+      for(const shape of blendshapes){
+        const prior=this.ema.get(shape.categoryName);
+        this.ema.set(shape.categoryName,prior===undefined?shape.score:prior+(shape.score-prior)*BLENDSHAPE_EMA_ALPHA);
+      }
+      const result=scoreExpressions(this.ema);let requested=result.winner;
+      if(this.current!=='neutral'){
+        const currentScore=result.scores[this.current];
+        if(requested==='neutral'&&currentScore>=.26)requested=this.current;
+        else if(requested!==this.current&&requested!=='neutral'&&result.scores[requested]<currentScore+EXPRESSION_SWITCH_MARGIN)requested=this.current;
+      }
+      if(requested===this.current){this.candidate=requested;this.candidateFrames=0}
+      else{
+        if(requested===this.candidate)this.candidateFrames+=1;else{this.candidate=requested;this.candidateFrames=1}
+        if(this.candidateFrames>=(requested==='neutral'?4:3)){this.current=requested;this.candidateFrames=0}
+      }
+      this.confidence=this.current==='neutral'?result.scores.neutral:result.scores[this.current];
+      return {expression:this.current,confidence:this.confidence,faceTracked:true,changed:previous!==this.current};
+    }
+  }
   // --- Crossed-wrists "follow mode" toggle ---------------------------------
   // Detects arms crossed in front of the chest: each wrist has moved to
   // the OPPOSITE side of the body midline from its own shoulder. Robust
@@ -786,6 +819,8 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
   let lockState = 'searching'; // 'searching' | 'locking' | 'tracking'
   let uplinkActive = false;
   let currentExpression = 'neutral';
+  const expressionTracker = new StableExpressionTracker();
+  let cachedFaceResult = null, lastFaceProcessedAt = 0;
 
   // Follow mode: crossing wrists toggles it on/off (debounced so a held
   // cross doesn't flap). While on, the shoulder-width in frame at the
@@ -828,7 +863,11 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
         termLog('net', 'loading face_landmarker model (expression tracking)...');
         faceTracker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', delegate: 'GPU' },
-          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true,
+          runningMode: 'VIDEO',
+          // MediaPipe applies built-in landmark smoothing only in single-face mode.
+          numFaces: 1,
+          minFaceDetectionConfidence: .6, minFacePresenceConfidence: .6, minTrackingConfidence: .6,
+          outputFaceBlendshapes: true,
         });
         termLog('net', 'face model ready');
       }
@@ -844,6 +883,7 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
       camStatusText.textContent = 'Tracking locally';
       lastFrame = performance.now(); lastProcessedAt = 0;
       lockState = 'searching'; uplinkActive = false;
+      expressionTracker.reset(); currentExpression = 'neutral'; cachedFaceResult = null; lastFaceProcessedAt = 0;
       followMode = false; followBaselineWidth = null; lastCrossedState = false;
       termLog('sys', `tracking loop started (visuals capped ${VISUAL_HZ_CAP}Hz — 2x the robot's own ${BOT_MAX_HZ}Hz limit)`);
       loop();
@@ -864,7 +904,8 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
     toggleBtn.textContent = 'START CAMERA';
     hudLock.textContent = 'SEARCHING'; hudLock.className = 'warn';
     hudUplink.textContent = 'OFF'; hudUplink.className = 'dim-txt';
-    hudExpression.textContent = '—'; hudExpression.className = 'dim-txt';
+    hudExpression.textContent = 'SEARCHING'; hudExpression.className = 'warn';
+    expressionTracker.reset(); currentExpression = 'neutral'; cachedFaceResult = null; lastFaceProcessedAt = 0;
     hudFollow.textContent = 'OFF'; hudFollow.className = 'dim-txt';
     eyeDotL.style.background = ''; eyeDotL.style.boxShadow = '';
     eyeDotR.style.background = ''; eyeDotR.style.boxShadow = '';
@@ -919,9 +960,13 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
 
     const t0 = performance.now();
     const result = tracker.detectForVideo(video, now);
-    const faceResult = faceTracker.detectForVideo(video, now);
-    const latencyMs = performance.now() - t0;
-
+    let faceUpdated = false;
+    if(now-lastFaceProcessedAt>=FACE_FRAME_INTERVAL_MS){
+      cachedFaceResult=faceTracker.detectForVideo(video,now);
+      lastFaceProcessedAt=now;faceUpdated=true;
+    }
+    const faceResult=cachedFaceResult;
+    const latencyMs=performance.now()-t0;
     // Two separate gates, not one: whether to DRAW (loose — any pose at
     // all) vs whether it's confident enough to COMPUTE + STREAM angles to
     // a real robot (stricter — arm joints specifically). The previous
@@ -941,16 +986,20 @@ import { DrawingUtils, FaceLandmarker, FilesetResolver, PoseLandmarker } from "h
     // Face expression -> eye color. Independent of arm tracking (a face
     // can be visible with arms out of frame, or vice versa), so this runs
     // regardless of poseDetected.
-    const blendshapes = faceResult.faceBlendshapes?.[0]?.categories;
-    const expression = classifyExpression(blendshapes);
-    if(expression !== currentExpression){
-      currentExpression = expression;
-      hudExpression.textContent = expression.toUpperCase();
-      hudExpression.className = expression === 'neutral' ? 'dim-txt' : 'ok';
-      setEyeColor(EXPRESSION_COLORS[expression]);
-      termLog('track', `expression: ${expression}`);
+    const blendshapes=faceResult?.faceBlendshapes?.[0]?.categories;
+    const faceState=faceUpdated?expressionTracker.update(blendshapes,now):expressionTracker.snapshot();
+    currentExpression=faceState.expression;
+    hudExpression.textContent=faceState.faceTracked?faceState.expression.toUpperCase()+' '+Math.round(faceState.confidence*100)+'%':'SEARCHING';
+    hudExpression.className=!faceState.faceTracked?'warn':faceState.expression==='neutral'?'dim-txt':'ok';
+    setEyeColor(EXPRESSION_COLORS[faceState.expression]);
+    if(faceState.changed)termLog('track','expression: '+faceState.expression+' ('+Math.round(faceState.confidence*100)+'%)');
+    const faceLandmarks=faceResult?.faceLandmarks?.[0];
+    if(faceLandmarks&&faceState.faceTracked){
+      const faceColor=EXPRESSION_COLORS[faceState.expression],faceDrawing=new DrawingUtils(ctx);
+      faceDrawing.drawConnectors(faceLandmarks,FaceLandmarker.FACE_LANDMARKS_CONTOURS,{color:faceColor+'aa',lineWidth:1.2});
+      faceDrawing.drawConnectors(faceLandmarks,FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS,{color:'#ffffffcc',lineWidth:1});
+      faceDrawing.drawConnectors(faceLandmarks,FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS,{color:'#ffffffcc',lineWidth:1});
     }
-
     let streaming = false;
     let locomotionAction = null;
     if(poseDetected){
